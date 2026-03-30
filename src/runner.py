@@ -12,9 +12,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from .exporter import save_conversation
+from .exporter import save_batch, save_conversation
 from .generator import generate_conversation
-from .models import Defaults, NamiConfig, ScenarioConfig
+from .models import BatchConfig, Defaults, NamiConfig, ScenarioConfig
 
 app = typer.Typer(help="NAMI Evals — Gerador de conversas sintéticas multi-turno")
 console = Console()
@@ -79,7 +79,8 @@ def _run_scenario(
     conversation = generate_conversation(nami_config, scenario, max_turns, delay=delay)
     json_path, docx_path = save_conversation(conversation, output_dir)
 
-    stop_label = "NAMI teve sucesso" if conversation.conversation_stop_reason == "nami_succeeded" else "Limite de turnos atingido"
+    stop_labels = {"nami_succeeded": "NAMI teve sucesso", "rate_limit_error": "ERRO — Rate limit", "turns_ended": "Nami não conseguiu obter sucesso no limite de turnos estabelecido"}
+    stop_label = stop_labels.get(conversation.conversation_stop_reason, conversation.conversation_stop_reason)
     console.print(f"\n[bold green]JSON:[/] {json_path}")
     console.print(f"[bold green]DOCX:[/] {docx_path}")
     console.print(f"[dim]Total de turnos: {conversation.metadata.total_turns} | Motivo: {stop_label}[/]")
@@ -120,6 +121,59 @@ def run_all(
     for name in scenarios:
         _run_scenario(name, nami, defaults, max_turns, output_dir, delay_override=delay)
         console.print()
+
+
+@app.command()
+def run_batch(
+    batch_config: Path = typer.Option(CONFIG_DIR / "batch.yml", "--batch-config", help="Caminho para config do batch"),
+    nami_config: Optional[Path] = typer.Option(None, "--nami-config", help="Caminho para config da NAMI"),
+    max_turns: Optional[int] = typer.Option(None, "--max-turns", help="Override de turnos máximos"),
+    output_dir: Optional[str] = typer.Option(None, "--output-dir", help="Diretório de saída"),
+    delay: Optional[float] = typer.Option(None, "--delay", help="Delay em segundos entre chamadas LLM"),
+) -> None:
+    """Roda cenários listados no batch.yml, repetindo N vezes cada."""
+    batch = BatchConfig(**_load_yaml(batch_config))
+    defaults = _load_defaults()
+    nami = _load_nami_config(nami_config)
+
+    resolved_max_turns = max_turns
+    resolved_output_dir = output_dir or defaults.output_dir
+    resolved_delay = delay if delay is not None else defaults.delay
+
+    total = len(batch.scenarios) * batch.conversation_rounds
+    console.print(
+        f"[bold]Batch:[/] {len(batch.scenarios)} cenário(s) x {batch.conversation_rounds} rodada(s) = {total} conversa(s)\n"
+    )
+
+    all_conversations = []
+
+    for round_num in range(1, batch.conversation_rounds + 1):
+        console.print(f"[bold]━━━ Rodada {round_num}/{batch.conversation_rounds} ━━━[/]\n")
+
+        for scenario_name in batch.scenarios:
+            scenario = _load_scenario(scenario_name)
+            turns = resolved_max_turns or scenario.max_turns or defaults.max_turns
+
+            console.print(Panel(
+                f"[bold]{scenario.scenario}[/]\n"
+                f"Persona: {scenario.persona}\n"
+                f"Rodada: {round_num}/{batch.conversation_rounds}",
+                title=f"Test Case: {scenario.test_case}",
+            ))
+
+            conversation = generate_conversation(nami, scenario, turns, delay=resolved_delay)
+            json_path, _ = save_conversation(conversation, resolved_output_dir)
+            all_conversations.append(conversation)
+
+            stop_labels = {"nami_succeeded": "NAMI teve sucesso", "rate_limit_error": "ERRO — Rate limit", "turns_ended": "Nami não conseguiu obter sucesso no limite de turnos estabelecido"}
+            stop_label = stop_labels.get(conversation.conversation_stop_reason, conversation.conversation_stop_reason)
+            console.print(f"[bold green]JSON:[/] {json_path}")
+            console.print(f"[dim]Turnos: {conversation.metadata.total_turns} | {stop_label}[/]\n")
+
+    # DOCX combinado
+    batch_docx = save_batch(all_conversations, resolved_output_dir)
+    console.print(f"\n[bold green]DOCX combinado:[/] {batch_docx}")
+    console.print(f"[dim]Total: {len(all_conversations)} conversa(s) gerada(s)[/]")
 
 
 @app.command()

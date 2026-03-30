@@ -25,6 +25,11 @@ class ScenarioConfig(BaseModel):
     max_turns: Optional[int] = None
 
 
+class BatchConfig(BaseModel):
+    conversation_rounds: int = 1
+    scenarios: list[str] = []
+
+
 class Defaults(BaseModel):
     max_turns: int = 12
     delay: float = 0

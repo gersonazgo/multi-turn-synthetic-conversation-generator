@@ -5,8 +5,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from docx import Document
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import nsdecls
+from docx.oxml import parse_xml
 
 from .models import Conversation
 
@@ -21,9 +23,33 @@ def _format_timestamp(ts: str | None) -> str:
 
 
 STOP_REASON_LABELS = {
-    "turns_ended": "Limite de turnos atingido",
+    "turns_ended": "Nami não conseguiu obter sucesso no limite de turnos estabelecido",
     "nami_succeeded": "NAMI teve sucesso",
+    "rate_limit_error": "ERRO — Interrompida por rate limit",
 }
+
+
+def save_batch(conversations: list[Conversation], output_dir: str) -> Path:
+    path = Path(output_dir)
+    path.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now(BRT).strftime("%Y%m%d_%H%M%S")
+    docx_path = path / f"batch_{timestamp}.docx"
+
+    doc = Document()
+
+    # Conta ocorrências de cada test_case para numerar
+    counts: dict[str, int] = {}
+    for i, conversation in enumerate(conversations):
+        if i > 0:
+            doc.add_page_break()
+        counts[conversation.test_case] = counts.get(conversation.test_case, 0) + 1
+        seq = counts[conversation.test_case]
+        label = f"Test Case: {conversation.test_case} #{seq:02d}"
+        _append_conversation_to_doc(doc, conversation, label=label)
+
+    doc.save(str(docx_path))
+    return docx_path
 
 
 def save_conversation(conversation: Conversation, output_dir: str) -> tuple[Path, Path]:
@@ -46,9 +72,9 @@ def save_conversation(conversation: Conversation, output_dir: str) -> tuple[Path
     return json_path, docx_path
 
 
-def _add_header_field(doc: Document, label: str, value: str) -> None:
-    p = doc.add_paragraph()
-    p.paragraph_format.space_after = Pt(2)
+def _add_cell_field(cell, label: str, value: str) -> None:
+    p = cell.add_paragraph()
+    p.paragraph_format.space_after = Pt(1)
     p.paragraph_format.space_before = Pt(0)
     run_label = p.add_run(f"{label}: ")
     run_label.bold = True
@@ -58,32 +84,60 @@ def _add_header_field(doc: Document, label: str, value: str) -> None:
     run_value.font.size = Pt(10)
 
 
-def _save_docx(conversation: Conversation, filepath: Path) -> None:
-    doc = Document()
+def _remove_cell_default_paragraph(cell) -> None:
+    """Remove o parágrafo vazio padrão que python-docx cria em cada célula."""
+    first_p = cell.paragraphs[0]
+    if not first_p.text:
+        p_element = first_p._element
+        p_element.getparent().remove(p_element)
 
+
+def _append_conversation_to_doc(doc: Document, conversation: Conversation, label: str | None = None) -> None:
     # Título
-    title = doc.add_heading(f"Conversa: {conversation.test_case}", level=1)
+    heading = label or f"Test Case: {conversation.test_case}"
+    title = doc.add_heading(heading, level=1)
     title.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
-    # Header com metadata
+    # Header com metadata em tabela de 2 colunas
     meta = conversation.metadata
     stop_label = STOP_REASON_LABELS.get(
         conversation.conversation_stop_reason, conversation.conversation_stop_reason
     )
 
-    _add_header_field(doc, "Capability", conversation.capability)
-    _add_header_field(doc, "Test Case", conversation.test_case)
-    _add_header_field(doc, "Cenário", conversation.scenario)
-    _add_header_field(doc, "Persona", conversation.persona)
-    _add_header_field(doc, "Colaboração", conversation.collaboration)
-    _add_header_field(doc, "Modelo NAMI", meta.nami_model)
-    _add_header_field(doc, "Temperatura NAMI", str(meta.nami_temperature))
-    _add_header_field(doc, "Modelo Paciente", meta.patient_model)
-    _add_header_field(doc, "Temperatura Paciente", str(meta.patient_temperature))
-    _add_header_field(doc, "Total de turnos", str(meta.total_turns))
-    _add_header_field(doc, "Resultado", stop_label)
-    _add_header_field(doc, "Início", _format_timestamp(meta.started_at))
-    _add_header_field(doc, "Fim", _format_timestamp(meta.finished_at))
+    table = doc.add_table(rows=1, cols=2)
+    table.autofit = True
+
+    # Remove bordas da tabela
+    for cell in table.rows[0].cells:
+        cell._element.get_or_add_tcPr().append(
+            parse_xml(f'<w:tcBorders {nsdecls("w")}>'
+                      '<w:top w:val="none"/><w:left w:val="none"/>'
+                      '<w:bottom w:val="none"/><w:right w:val="none"/>'
+                      '</w:tcBorders>')
+        )
+
+    left_cell = table.rows[0].cells[0]
+    right_cell = table.rows[0].cells[1]
+
+    _remove_cell_default_paragraph(left_cell)
+    _remove_cell_default_paragraph(right_cell)
+
+    # Coluna esquerda — dados do cenário
+    _add_cell_field(left_cell, "Capability", conversation.capability)
+    _add_cell_field(left_cell, "Test Case", conversation.test_case)
+    _add_cell_field(left_cell, "Cenário", conversation.scenario)
+    _add_cell_field(left_cell, "Persona", conversation.persona)
+    _add_cell_field(left_cell, "Colaboração", conversation.collaboration)
+
+    # Coluna direita — dados técnicos
+    _add_cell_field(right_cell, "Modelo NAMI", meta.nami_model)
+    _add_cell_field(right_cell, "Temperatura NAMI", str(meta.nami_temperature))
+    _add_cell_field(right_cell, "Modelo Paciente", meta.patient_model)
+    _add_cell_field(right_cell, "Temperatura Paciente", str(meta.patient_temperature))
+    _add_cell_field(right_cell, "Total de turnos", str(meta.total_turns))
+    _add_cell_field(right_cell, "Resultado", stop_label)
+    _add_cell_field(right_cell, "Início", _format_timestamp(meta.started_at))
+    _add_cell_field(right_cell, "Fim", _format_timestamp(meta.finished_at))
 
     # Separador
     doc.add_paragraph("─" * 50)
@@ -104,4 +158,8 @@ def _save_docx(conversation: Conversation, filepath: Path) -> None:
         run_content = p.add_run(msg.content)
         run_content.font.size = Pt(11)
 
+
+def _save_docx(conversation: Conversation, filepath: Path) -> None:
+    doc = Document()
+    _append_conversation_to_doc(doc, conversation)
     doc.save(str(filepath))

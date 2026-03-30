@@ -21,7 +21,10 @@ ANTHROPIC_API_KEY=sk-ant-...
 # Rodar um cenario
 uv run nami-evals run p01_camila
 
-# Rodar todos os cenarios
+# Rodar batch (cenarios e rodadas definidos em config/batch.yml)
+uv run nami-evals run-batch
+
+# Rodar todos os cenarios (1 vez cada)
 uv run nami-evals run-all
 
 # Listar cenarios disponiveis
@@ -43,6 +46,7 @@ uv run nami-evals list-scenarios
 |---|---|
 | `config/nami.yml` | System prompt + modelo + temperatura da NAMI |
 | `config/defaults.yml` | max_turns e output_dir |
+| `config/batch.yml` | Cenarios e quantidade de rodadas para o batch |
 | `config/scenarios/*.yml` | Um arquivo por cenario (persona do paciente) |
 
 ## Output

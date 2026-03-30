@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import litellm
 from litellm.exceptions import RateLimitError
@@ -40,7 +40,8 @@ def generate_conversation(
     max_turns: int,
     delay: float = 0,
 ) -> Conversation:
-    conv_id = f"{scenario.test_case}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    BRT = timezone(timedelta(hours=-3))
+    conv_id = f"{scenario.test_case}_{datetime.now(BRT).strftime('%Y%m%d_%H%M%S')}"
 
     conversation = Conversation(
         id=conv_id,
@@ -78,45 +79,50 @@ def generate_conversation(
     # Cada turno = 1 ida e volta (paciente + NAMI)
     # A first_message já é a primeira "ida", falta a "volta" da NAMI para completar o turno 1
     stop_reason = "turns_ended"
+    turn = 0
 
-    for turn in range(1, max_turns + 1):
-        # NAMI responde
-        if delay > 0 and turn > 1:
-            time.sleep(delay)
-        console.print(f"[dim]Turno {turn}/{max_turns} — NAMI pensando...[/]")
-        nami_response = _call_llm(nami_config.model, nami_config.temperature, nami_history)
-        nami_msg = Message(role="nami", content=nami_response)
-        conversation.messages.append(nami_msg)
-        console.print(f"[bold green]Nami:[/] {nami_response}")
+    try:
+        for turn in range(1, max_turns + 1):
+            # NAMI responde
+            if delay > 0 and turn > 1:
+                time.sleep(delay)
+            console.print(f"[dim]Turno {turn}/{max_turns} — NAMI pensando...[/]")
+            nami_response = _call_llm(nami_config.model, nami_config.temperature, nami_history)
+            nami_msg = Message(role="nami", content=nami_response)
+            conversation.messages.append(nami_msg)
+            console.print(f"[bold green]Nami:[/] {nami_response}")
 
-        nami_history.append({"role": "assistant", "content": nami_response})
-        patient_history.append({"role": "user", "content": nami_response})
+            nami_history.append({"role": "assistant", "content": nami_response})
+            patient_history.append({"role": "user", "content": nami_response})
 
-        if turn >= max_turns:
-            break
+            if turn >= max_turns:
+                break
 
-        # Paciente responde
-        if delay > 0:
-            time.sleep(delay)
-        console.print(f"[dim]Turno {turn}/{max_turns} — {scenario.persona} pensando...[/]")
-        patient_response = _call_llm(scenario.model, scenario.temperature, patient_history)
-        patient_msg = Message(role="patient", content=patient_response)
-        conversation.messages.append(patient_msg)
-        console.print(f"[bold cyan]{scenario.persona}:[/] {patient_response}")
+            # Paciente responde
+            if delay > 0:
+                time.sleep(delay)
+            console.print(f"[dim]Turno {turn}/{max_turns} — {scenario.persona} pensando...[/]")
+            patient_response = _call_llm(scenario.model, scenario.temperature, patient_history)
+            patient_msg = Message(role="patient", content=patient_response)
+            conversation.messages.append(patient_msg)
+            console.print(f"[bold cyan]{scenario.persona}:[/] {patient_response}")
 
-        patient_history.append({"role": "assistant", "content": patient_response})
-        nami_history.append({"role": "user", "content": patient_response})
+            patient_history.append({"role": "assistant", "content": patient_response})
+            nami_history.append({"role": "user", "content": patient_response})
 
-        # Paciente satisfeito — NAMI fecha e encerramos
-        if _is_patient_satisfied(patient_response):
-            console.print(f"[dim]Turno {turn + 1}/{max_turns} — NAMI fechando...[/]")
-            nami_closing = _call_llm(nami_config.model, nami_config.temperature, nami_history)
-            nami_closing_msg = Message(role="nami", content=nami_closing)
-            conversation.messages.append(nami_closing_msg)
-            console.print(f"[bold green]Nami:[/] {nami_closing}")
-            stop_reason = "nami_succeeded"
-            turn += 1
-            break
+            # Paciente satisfeito — NAMI fecha e encerramos
+            if _is_patient_satisfied(patient_response):
+                console.print(f"[dim]Turno {turn + 1}/{max_turns} — NAMI fechando...[/]")
+                nami_closing = _call_llm(nami_config.model, nami_config.temperature, nami_history)
+                nami_closing_msg = Message(role="nami", content=nami_closing)
+                conversation.messages.append(nami_closing_msg)
+                console.print(f"[bold green]Nami:[/] {nami_closing}")
+                stop_reason = "nami_succeeded"
+                turn += 1
+                break
+    except RuntimeError:
+        stop_reason = "rate_limit_error"
+        console.print("[bold red]Conversa interrompida por rate limit.[/]")
 
     conversation.conversation_stop_reason = stop_reason
     conversation.metadata.total_turns = turn
