@@ -1,0 +1,8 @@
+datasets/*.json
+datasets/*.docx
+datasets/*/
+.venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store

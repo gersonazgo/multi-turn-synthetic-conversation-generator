@@ -1,0 +1,4 @@
+model: "openai/gpt-4.1-2025-04-14"
+temperature: 0
+system_prompt: |
+  Você se chama Nami.
