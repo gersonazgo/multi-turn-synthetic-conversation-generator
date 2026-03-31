@@ -19,6 +19,16 @@ from .models import BatchConfig, Defaults, NamiConfig, ScenarioConfig
 app = typer.Typer(help="NAMI Evals — Gerador de conversas sintéticas multi-turno")
 console = Console()
 
+STOP_LABELS = {
+    "nami_succeeded": "NAMI teve sucesso",
+    "turns_ended": "Nami não conseguiu obter sucesso no limite de turnos estabelecido",
+    "rate_limit_error": "ERRO — Rate limit",
+    "llm_transient_error": "ERRO — Erro transiente persistente (rate limit / timeout / server)",
+    "llm_content_error": "ERRO — Conteúdo vazio ou recusado pelo LLM",
+    "llm_non_transient_error": "ERRO — Falha não-transiente do LLM",
+    "role_swap_error": "ERRO — Paciente trocou de papel (role-swap)",
+}
+
 CONFIG_DIR = Path("config")
 SCENARIOS_DIR = CONFIG_DIR / "scenarios"
 
@@ -42,8 +52,7 @@ def _load_nami_config(path: Optional[Path] = None) -> NamiConfig:
 def _load_scenario(name: str) -> ScenarioConfig:
     scenario_path = SCENARIOS_DIR / f"{name}.yml"
     if not scenario_path.exists():
-        console.print(f"[red]Cenário não encontrado: {scenario_path}[/]")
-        raise typer.Exit(1)
+        raise FileNotFoundError(f"Arquivo não encontrado: {scenario_path}")
     return ScenarioConfig(**_load_yaml(scenario_path))
 
 
@@ -79,8 +88,7 @@ def _run_scenario(
     conversation = generate_conversation(nami_config, scenario, max_turns, delay=delay)
     json_path, docx_path = save_conversation(conversation, output_dir)
 
-    stop_labels = {"nami_succeeded": "NAMI teve sucesso", "rate_limit_error": "ERRO — Rate limit", "turns_ended": "Nami não conseguiu obter sucesso no limite de turnos estabelecido"}
-    stop_label = stop_labels.get(conversation.conversation_stop_reason, conversation.conversation_stop_reason)
+    stop_label = STOP_LABELS.get(conversation.conversation_stop_reason, conversation.conversation_stop_reason)
     console.print(f"\n[bold green]JSON:[/] {json_path}")
     console.print(f"[bold green]DOCX:[/] {docx_path}")
     console.print(f"[dim]Total de turnos: {conversation.metadata.total_turns} | Motivo: {stop_label}[/]")
@@ -135,6 +143,21 @@ def run_batch(
     batch = BatchConfig(**_load_yaml(batch_config))
     defaults = _load_defaults()
     nami = _load_nami_config(nami_config)
+
+    # Validação: carrega todos os cenários antes de iniciar
+    console.print("[dim]Validando cenários...[/]")
+    errors = []
+    for scenario_name in batch.scenarios:
+        try:
+            _load_scenario(scenario_name)
+        except (typer.Exit, Exception) as e:
+            errors.append(f"  {scenario_name}: {e}")
+    if errors:
+        console.print("[bold red]Erros encontrados nos cenários:[/]")
+        for err in errors:
+            console.print(f"[red]{err}[/]")
+        raise typer.Exit(1)
+    console.print(f"[green]Todos os {len(batch.scenarios)} cenário(s) validados.[/]\n")
 
     resolved_max_turns = max_turns
     resolved_output_dir = output_dir or defaults.output_dir

@@ -59,6 +59,7 @@ class Conversation(BaseModel):
     scenario: str
     persona: str
     collaboration: str = ""
-    conversation_stop_reason: str = "turns_ended"  # "turns_ended" | "nami_succeeded"
+    conversation_stop_reason: str = "turns_ended"
+    # "turns_ended" | "nami_succeeded" | "role_swap_error" | "llm_transient_error" | "llm_content_error" | "llm_non_transient_error"
     messages: list[Message] = []
     metadata: ConversationMetadata

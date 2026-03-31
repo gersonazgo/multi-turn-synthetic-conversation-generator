@@ -26,6 +26,10 @@ STOP_REASON_LABELS = {
     "turns_ended": "Nami não conseguiu obter sucesso no limite de turnos estabelecido",
     "nami_succeeded": "NAMI teve sucesso",
     "rate_limit_error": "ERRO — Interrompida por rate limit",
+    "llm_transient_error": "ERRO — Erro transiente persistente (rate limit / timeout / server)",
+    "llm_content_error": "ERRO — Conteúdo vazio ou recusado pelo LLM",
+    "llm_non_transient_error": "ERRO — Falha não-transiente do LLM",
+    "role_swap_error": "ERRO — Paciente trocou de papel (role-swap)",
 }
 
 
