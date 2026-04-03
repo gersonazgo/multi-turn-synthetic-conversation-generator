@@ -5,8 +5,7 @@ Generate multi-turn synthetic conversations between two LLMs — one acting as t
 Useful when you're still building an MVP and don't have production traces yet, or when you can't access them. You can use it to:
 
 - Iterate on system prompts and fix specification errors
-- Generate synthetic datasets for evaluations (evals)
-- Perform error analysis (open coding) on conversation traces
+- Generate synthetic datasets for evaluations (evals) or error analysis
 
 ![Conversation Playground](docs/screenshot.png)
 
