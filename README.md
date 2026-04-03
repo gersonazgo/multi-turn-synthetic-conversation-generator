@@ -1,8 +1,6 @@
 # Multi-Turn Synthetic Conversation Generator
 
-Generate multi-turn synthetic conversations between two LLMs — one acting as the assistant, the other as a user persona.
-
-Useful when you're still building an MVP and don't have production traces yet, or when you can't access them. You can use it to:
+Generate multi-turn synthetic conversations between two LLMs — one acting as the assistant, the other as a user persona. Useful when you're still building an MVP and don't have production traces yet, or when you can't access them. You can use it to:
 
 - Iterate on system prompts and fix specification errors
 - Generate synthetic datasets for evaluations (evals) or error analysis
