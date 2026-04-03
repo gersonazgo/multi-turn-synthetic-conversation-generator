@@ -1,7 +1,7 @@
 [project]
-name = "nami-evals"
+name = "multi-turn-synthetic-conversation-generator"
 version = "0.1.0"
-description = "Geração de conversas sintéticas multi-turno para avaliação de prompts NAMI"
+description = "Multi-turn synthetic conversation generator for LLM prompt evaluation"
 requires-python = ">=3.11"
 dependencies = [
     "litellm>=1.50.0",
@@ -17,8 +17,8 @@ dependencies = [
 ]
 
 [project.scripts]
-nami-evals = "src.runner:app"
-nami-playground = "src.server:main"
+multi-turn-synthetic-conversation-generator = "src.runner:app"
+playground = "src.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

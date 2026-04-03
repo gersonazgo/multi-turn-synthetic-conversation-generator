@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NAMI Playground</title>
+<title>Conversation Playground</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -96,7 +96,7 @@
     gap: 4px;
   }
 
-  /* WhatsApp-style bubbles */
+  /* Chat-style bubbles */
   .message {
     max-width: 65%;
     padding: 6px 12px 6px 12px;
@@ -117,14 +117,14 @@
     word-wrap: break-word;
   }
 
-  /* Patient bubble — left, white */
-  .message.patient {
+  /* User bubble — left, white */
+  .message.user {
     background: #fff;
     align-self: flex-start;
     border-top-left-radius: 0;
   }
-  .message.patient .speaker { color: #075e54; }
-  .message.patient::before {
+  .message.user .speaker { color: #075e54; }
+  .message.user::before {
     content: "";
     position: absolute;
     top: 0;
@@ -135,14 +135,14 @@
     border-right: 8px solid #fff;
   }
 
-  /* Nami bubble — right, green */
-  .message.nami {
+  /* Assistant bubble — right, green */
+  .message.assistant {
     background: #dcf8c6;
     align-self: flex-end;
     border-top-right-radius: 0;
   }
-  .message.nami .speaker { color: #1e8850; }
-  .message.nami::before {
+  .message.assistant .speaker { color: #1e8850; }
+  .message.assistant::before {
     content: "";
     position: absolute;
     top: 0;
@@ -253,13 +253,13 @@
 
 <!-- Sidebar: History -->
 <div id="sidebar">
-  <h2>Historico</h2>
+  <h2>History</h2>
   <div id="history-list"></div>
 </div>
 
 <!-- Conversation Panel -->
 <div id="conversation-panel">
-  <div id="status-bar">Selecione um prompt e cenario para iniciar.</div>
+  <div id="status-bar">Select a prompt and scenario to start.</div>
   <div id="messages"></div>
   <div id="result-bar"></div>
 </div>
@@ -267,13 +267,13 @@
 <!-- Controls -->
 <div id="controls">
   <div>
-    <label for="select-nami">Prompt da Nami</label>
-    <select id="select-nami"><option value="">Carregando...</option></select>
+    <label for="select-assistant">Assistant Prompt</label>
+    <select id="select-assistant"><option value="">Loading...</option></select>
   </div>
 
   <div>
-    <label for="select-scenario">Cenario do Paciente</label>
-    <select id="select-scenario"><option value="">Carregando...</option></select>
+    <label for="select-scenario">User Scenario</label>
+    <select id="select-scenario"><option value="">Loading...</option></select>
   </div>
 
   <div class="button-row">
@@ -282,35 +282,34 @@
   </div>
 
   <div id="editor-container">
-    <label for="editor">Editor do Prompt (Nami)</label>
-    <textarea id="editor" placeholder="Selecione um prompt da Nami para editar..." spellcheck="false"></textarea>
+    <label for="editor">Prompt Editor (Assistant)</label>
+    <textarea id="editor" placeholder="Select an assistant prompt to edit..." spellcheck="false"></textarea>
     <div id="save-status"></div>
   </div>
 
-  <button id="btn-save" disabled>Salvar Prompt</button>
+  <button id="btn-save" disabled>Save Prompt</button>
 </div>
 
 <script>
 const STOP_LABELS = {
-  nami_succeeded: "NAMI teve sucesso",
-  turns_ended: "Limite de turnos atingido",
-  cancelled: "Cancelada pelo usuario",
-  role_swap_error: "Erro: role-swap",
-  llm_transient_error: "Erro: transiente (rate limit/timeout)",
-  llm_content_error: "Erro: conteudo vazio/recusado",
-  llm_non_transient_error: "Erro: falha nao-transiente",
+  assistant_succeeded: "Assistant succeeded",
+  turns_ended: "Turn limit reached",
+  cancelled: "Cancelled by user",
+  llm_transient_error: "Error: transient (rate limit/timeout)",
+  llm_content_error: "Error: empty/refused content",
+  llm_non_transient_error: "Error: non-transient failure",
 };
 
 let eventSource = null;
 let isRunning = false;
-let currentNami = "";
+let currentAssistant = "";
 let currentPersona = "";
 
 // ── Init ──────────────────────────────────────────────────────────────────
 
 async function init() {
-  await Promise.all([loadNamiConfigs(), loadScenarioConfigs(), loadHistory()]);
-  document.getElementById("select-nami").addEventListener("change", onNamiSelect);
+  await Promise.all([loadAssistantConfigs(), loadScenarioConfigs(), loadHistory()]);
+  document.getElementById("select-assistant").addEventListener("change", onAssistantSelect);
   document.getElementById("btn-play").addEventListener("click", startConversation);
   document.getElementById("btn-stop").addEventListener("click", stopConversation);
   document.getElementById("btn-save").addEventListener("click", savePrompt);
@@ -318,11 +317,11 @@ async function init() {
 
 // ── Load configs ──────────────────────────────────────────────────────────
 
-async function loadNamiConfigs() {
-  const res = await fetch("/api/configs/nami");
+async function loadAssistantConfigs() {
+  const res = await fetch("/api/configs/assistant");
   const configs = await res.json();
-  const select = document.getElementById("select-nami");
-  select.innerHTML = '<option value="">-- Selecione --</option>';
+  const select = document.getElementById("select-assistant");
+  select.innerHTML = '<option value="">-- Select --</option>';
   configs.forEach(name => {
     const opt = document.createElement("option");
     opt.value = name;
@@ -336,7 +335,7 @@ async function loadScenarioConfigs() {
   const res = await fetch("/api/configs/scenarios");
   const configs = await res.json();
   const select = document.getElementById("select-scenario");
-  select.innerHTML = '<option value="">-- Selecione --</option>';
+  select.innerHTML = '<option value="">-- Select --</option>';
   configs.forEach(cfg => {
     const opt = document.createElement("option");
     opt.value = cfg.name;
@@ -348,9 +347,9 @@ async function loadScenarioConfigs() {
 
 // ── Load editor ───────────────────────────────────────────────────────────
 
-async function onNamiSelect() {
-  const name = document.getElementById("select-nami").value;
-  currentNami = name;
+async function onAssistantSelect() {
+  const name = document.getElementById("select-assistant").value;
+  currentAssistant = name;
   const editor = document.getElementById("editor");
   const saveStatus = document.getElementById("save-status");
   saveStatus.textContent = "";
@@ -362,7 +361,7 @@ async function onNamiSelect() {
     return;
   }
 
-  const res = await fetch(`/api/configs/nami/${name}`);
+  const res = await fetch(`/api/configs/assistant/${name}`);
   const data = await res.json();
   editor.value = data.content;
   document.getElementById("btn-save").disabled = false;
@@ -372,26 +371,26 @@ async function onNamiSelect() {
 // ── Save prompt ───────────────────────────────────────────────────────────
 
 async function savePrompt() {
-  if (!currentNami) return;
+  if (!currentAssistant) return;
   const content = document.getElementById("editor").value;
   const saveStatus = document.getElementById("save-status");
 
   try {
-    const res = await fetch(`/api/configs/nami/${currentNami}`, {
+    const res = await fetch(`/api/configs/assistant/${currentAssistant}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content }),
     });
     if (!res.ok) {
       const err = await res.json();
-      saveStatus.textContent = `Erro: ${err.detail || "falha ao salvar"}`;
+      saveStatus.textContent = `Error: ${err.detail || "failed to save"}`;
       saveStatus.style.color = "#dc3545";
       return;
     }
-    saveStatus.textContent = `Salvo com sucesso. Backup criado.`;
+    saveStatus.textContent = `Saved successfully. Backup created.`;
     saveStatus.style.color = "#28a745";
   } catch (e) {
-    saveStatus.textContent = `Erro: ${e.message}`;
+    saveStatus.textContent = `Error: ${e.message}`;
     saveStatus.style.color = "#dc3545";
   }
 }
@@ -399,15 +398,15 @@ async function savePrompt() {
 // ── Conversation ──────────────────────────────────────────────────────────
 
 function updatePlayButton() {
-  const nami = document.getElementById("select-nami").value;
+  const assistant = document.getElementById("select-assistant").value;
   const scenario = document.getElementById("select-scenario").value;
-  document.getElementById("btn-play").disabled = !nami || !scenario || isRunning;
+  document.getElementById("btn-play").disabled = !assistant || !scenario || isRunning;
 }
 
 function startConversation() {
-  const nami = document.getElementById("select-nami").value;
+  const assistant = document.getElementById("select-assistant").value;
   const scenario = document.getElementById("select-scenario").value;
-  if (!nami || !scenario) return;
+  if (!assistant || !scenario) return;
 
   isRunning = true;
   document.getElementById("btn-play").disabled = true;
@@ -415,20 +414,20 @@ function startConversation() {
   document.getElementById("messages").innerHTML = "";
   document.getElementById("result-bar").style.display = "none";
   document.getElementById("status-bar").innerHTML =
-    '<span class="loading-dot"></span>Iniciando conversa...';
+    '<span class="loading-dot"></span>Starting conversation...';
 
   // Deselect history
   document.querySelectorAll(".history-item.active").forEach(el => el.classList.remove("active"));
 
   eventSource = new EventSource(
-    `/api/conversation/stream?nami=${encodeURIComponent(nami)}&scenario=${encodeURIComponent(scenario)}`
+    `/api/conversation/stream?assistant=${encodeURIComponent(assistant)}&scenario=${encodeURIComponent(scenario)}`
   );
 
   eventSource.addEventListener("metadata", (e) => {
     const data = JSON.parse(e.data);
-    currentPersona = data.persona || "Paciente";
+    currentPersona = data.persona || "User";
     document.getElementById("status-bar").innerHTML =
-      `<span class="loading-dot"></span>${data.test_case} — ${data.nami_model} vs ${data.patient_model}`;
+      `<span class="loading-dot"></span>${data.test_case} — ${data.assistant_model} vs ${data.user_model}`;
   });
 
   eventSource.addEventListener("status", (e) => {
@@ -439,13 +438,13 @@ function startConversation() {
 
   eventSource.addEventListener("message", (e) => {
     const data = JSON.parse(e.data);
-    addMessage(data.role, data.content, data.role === "patient" ? currentPersona : "Nami");
+    addMessage(data.role, data.content, data.role === "user" ? currentPersona : "Assistant");
   });
 
   eventSource.addEventListener("error_event", (e) => {
     const data = JSON.parse(e.data);
     const statusBar = document.getElementById("status-bar");
-    statusBar.innerHTML = `<span style="color:#dc3545">Erro: ${data.message}</span>`;
+    statusBar.innerHTML = `<span style="color:#dc3545">Error: ${data.message}</span>`;
   });
 
   eventSource.addEventListener("done", (e) => {
@@ -491,11 +490,11 @@ function finishConversation(stopReason, totalTurns) {
 
   const label = STOP_LABELS[stopReason] || stopReason;
   document.getElementById("status-bar").textContent =
-    `Finalizada — ${totalTurns} turno(s)`;
+    `Finished — ${totalTurns} turn(s)`;
 
   const resultBar = document.getElementById("result-bar");
   resultBar.style.display = "block";
-  if (stopReason === "nami_succeeded") {
+  if (stopReason === "assistant_succeeded") {
     resultBar.style.color = "#155724";
     resultBar.style.background = "#d4edda";
   } else if (stopReason === "turns_ended" || stopReason === "cancelled") {
@@ -505,7 +504,7 @@ function finishConversation(stopReason, totalTurns) {
     resultBar.style.color = "#721c24";
     resultBar.style.background = "#f8d7da";
   }
-  resultBar.textContent = `Resultado: ${label}`;
+  resultBar.textContent = `Result: ${label}`;
 
   updatePlayButton();
   loadHistory();
@@ -528,16 +527,16 @@ async function loadHistory() {
     div.className = "history-item";
     div.dataset.id = conv.id;
 
-    const namiLabel = conv.nami_config_name || (conv.nami_model ? conv.nami_model.split("/").pop() : "");
+    const assistantLabel = conv.assistant_config_name || (conv.assistant_model ? conv.assistant_model.split("/").pop() : "");
 
     const stopLabel = STOP_LABELS[conv.stop_reason] || conv.stop_reason;
     let resultClass = "result-other";
-    if (conv.stop_reason === "nami_succeeded") resultClass = "result-success";
+    if (conv.stop_reason === "assistant_succeeded") resultClass = "result-success";
     else if (conv.stop_reason && conv.stop_reason.includes("error")) resultClass = "result-error";
 
     div.innerHTML = `
       <div class="test-case">${conv.test_case}</div>
-      <div class="meta">${namiLabel} · ${conv.total_turns} turnos</div>
+      <div class="meta">${assistantLabel} · ${conv.total_turns} turns</div>
       <span class="result ${resultClass}">${stopLabel}</span>
     `;
 
@@ -558,26 +557,28 @@ async function loadConversation(id, element) {
   messagesEl.innerHTML = "";
 
   conv.messages.forEach(msg => {
-    addMessage(msg.role, msg.content, msg.role === "nami" ? "Nami" : conv.persona);
+    const role = msg.role === "nami" ? "assistant" : (msg.role === "patient" ? "user" : msg.role);
+    addMessage(role, msg.content, role === "assistant" ? "Assistant" : conv.persona);
   });
 
-  const stopLabel = STOP_LABELS[conv.conversation_stop_reason] || conv.conversation_stop_reason;
+  const stopReason = conv.conversation_stop_reason === "nami_succeeded" ? "assistant_succeeded" : conv.conversation_stop_reason;
+  const stopLabel = STOP_LABELS[stopReason] || stopReason;
   document.getElementById("status-bar").textContent =
-    `${conv.test_case} — ${conv.metadata.total_turns} turno(s)`;
+    `${conv.test_case} — ${conv.metadata.total_turns} turn(s)`;
 
   const resultBar = document.getElementById("result-bar");
   resultBar.style.display = "block";
-  if (conv.conversation_stop_reason === "nami_succeeded") {
+  if (stopReason === "assistant_succeeded") {
     resultBar.style.color = "#155724";
     resultBar.style.background = "#d4edda";
-  } else if (conv.conversation_stop_reason === "turns_ended") {
+  } else if (stopReason === "turns_ended") {
     resultBar.style.color = "#856404";
     resultBar.style.background = "#fff3cd";
   } else {
     resultBar.style.color = "#721c24";
     resultBar.style.background = "#f8d7da";
   }
-  resultBar.textContent = `Resultado: ${stopLabel}`;
+  resultBar.textContent = `Result: ${stopLabel}`;
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────

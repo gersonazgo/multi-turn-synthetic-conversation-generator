@@ -12,37 +12,32 @@ from docx.oxml import parse_xml
 
 from .models import Conversation
 
-BRT = timezone(timedelta(hours=-3))
+
+STOP_REASON_LABELS = {
+    "turns_ended": "Turn limit reached without success",
+    "assistant_succeeded": "Assistant succeeded",
+    "llm_transient_error": "ERROR — Persistent transient error (rate limit / timeout / server)",
+    "llm_content_error": "ERROR — Empty or refused content from LLM",
+    "llm_non_transient_error": "ERROR — Non-transient LLM failure",
+}
 
 
 def _format_timestamp(ts: str | None) -> str:
     if not ts:
         return "—"
-    dt = datetime.fromisoformat(ts).astimezone(BRT)
-    return dt.strftime("%d/%m/%Y %H:%M:%S")
-
-
-STOP_REASON_LABELS = {
-    "turns_ended": "Nami não conseguiu obter sucesso no limite de turnos estabelecido",
-    "nami_succeeded": "NAMI teve sucesso",
-    "rate_limit_error": "ERRO — Interrompida por rate limit",
-    "llm_transient_error": "ERRO — Erro transiente persistente (rate limit / timeout / server)",
-    "llm_content_error": "ERRO — Conteúdo vazio ou recusado pelo LLM",
-    "llm_non_transient_error": "ERRO — Falha não-transiente do LLM",
-    "role_swap_error": "ERRO — Paciente trocou de papel (role-swap)",
-}
+    dt = datetime.fromisoformat(ts).astimezone(timezone.utc)
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def save_batch(conversations: list[Conversation], output_dir: str) -> Path:
     path = Path(output_dir)
     path.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now(BRT).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     docx_path = path / f"batch_{timestamp}.docx"
 
     doc = Document()
 
-    # Conta ocorrências de cada test_case para numerar
     counts: dict[str, int] = {}
     for i, conversation in enumerate(conversations):
         if i > 0:
@@ -89,7 +84,7 @@ def _add_cell_field(cell, label: str, value: str) -> None:
 
 
 def _remove_cell_default_paragraph(cell) -> None:
-    """Remove o parágrafo vazio padrão que python-docx cria em cada célula."""
+    """Remove the default empty paragraph that python-docx creates in each cell."""
     first_p = cell.paragraphs[0]
     if not first_p.text:
         p_element = first_p._element
@@ -97,12 +92,10 @@ def _remove_cell_default_paragraph(cell) -> None:
 
 
 def _append_conversation_to_doc(doc: Document, conversation: Conversation, label: str | None = None) -> None:
-    # Título
     heading = label or f"Test Case: {conversation.test_case}"
     title = doc.add_heading(heading, level=1)
     title.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
-    # Header com metadata em tabela de 2 colunas
     meta = conversation.metadata
     stop_label = STOP_REASON_LABELS.get(
         conversation.conversation_stop_reason, conversation.conversation_stop_reason
@@ -111,7 +104,6 @@ def _append_conversation_to_doc(doc: Document, conversation: Conversation, label
     table = doc.add_table(rows=1, cols=2)
     table.autofit = True
 
-    # Remove bordas da tabela
     for cell in table.rows[0].cells:
         cell._element.get_or_add_tcPr().append(
             parse_xml(f'<w:tcBorders {nsdecls("w")}>'
@@ -126,30 +118,30 @@ def _append_conversation_to_doc(doc: Document, conversation: Conversation, label
     _remove_cell_default_paragraph(left_cell)
     _remove_cell_default_paragraph(right_cell)
 
-    # Coluna esquerda — dados do cenário
+    # Left column — scenario data
     _add_cell_field(left_cell, "Capability", conversation.capability)
     _add_cell_field(left_cell, "Test Case", conversation.test_case)
-    _add_cell_field(left_cell, "Cenário", conversation.scenario)
+    _add_cell_field(left_cell, "Scenario", conversation.scenario)
     _add_cell_field(left_cell, "Persona", conversation.persona)
-    _add_cell_field(left_cell, "Colaboração", conversation.collaboration)
+    _add_cell_field(left_cell, "Collaboration", conversation.collaboration)
 
-    # Coluna direita — dados técnicos
-    _add_cell_field(right_cell, "Modelo NAMI", meta.nami_model)
-    _add_cell_field(right_cell, "Temperatura NAMI", str(meta.nami_temperature))
-    _add_cell_field(right_cell, "Modelo Paciente", meta.patient_model)
-    _add_cell_field(right_cell, "Temperatura Paciente", str(meta.patient_temperature))
-    _add_cell_field(right_cell, "Total de turnos", str(meta.total_turns))
-    _add_cell_field(right_cell, "Resultado", stop_label)
-    _add_cell_field(right_cell, "Início", _format_timestamp(meta.started_at))
-    _add_cell_field(right_cell, "Fim", _format_timestamp(meta.finished_at))
+    # Right column — technical data
+    _add_cell_field(right_cell, "Assistant Model", meta.assistant_model)
+    _add_cell_field(right_cell, "Assistant Temperature", str(meta.assistant_temperature))
+    _add_cell_field(right_cell, "User Model", meta.user_model)
+    _add_cell_field(right_cell, "User Temperature", str(meta.user_temperature))
+    _add_cell_field(right_cell, "Total Turns", str(meta.total_turns))
+    _add_cell_field(right_cell, "Result", stop_label)
+    _add_cell_field(right_cell, "Started", _format_timestamp(meta.started_at))
+    _add_cell_field(right_cell, "Finished", _format_timestamp(meta.finished_at))
 
-    # Separador
+    # Separator
     doc.add_paragraph("─" * 50)
 
-    # Mensagens
+    # Messages
     for msg in conversation.messages:
-        speaker = conversation.persona if msg.role == "patient" else "Nami"
-        color = RGBColor(0x1A, 0x73, 0xE8) if msg.role == "patient" else RGBColor(0x1E, 0x88, 0x50)
+        speaker = conversation.persona if msg.role == "user" else "Assistant"
+        color = RGBColor(0x1A, 0x73, 0xE8) if msg.role == "user" else RGBColor(0x1E, 0x88, 0x50)
 
         p = doc.add_paragraph()
         p.paragraph_format.space_after = Pt(8)

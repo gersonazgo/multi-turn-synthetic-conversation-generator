@@ -6,7 +6,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class NamiConfig(BaseModel):
+class AssistantConfig(BaseModel):
     model: str
     temperature: float = 0.7
     system_prompt: str
@@ -34,20 +34,22 @@ class Defaults(BaseModel):
     max_turns: int = 12
     delay: float = 0
     output_dir: str = "datasets"
+    stop_phrase: str = "thank you, assistant"
+    timezone: str = "UTC"
 
 
 class Message(BaseModel):
-    role: str  # "patient" | "nami"
+    role: str  # "user" | "assistant"
     content: str
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class ConversationMetadata(BaseModel):
-    nami_model: str
-    nami_temperature: float
-    patient_model: str
-    patient_temperature: float
-    nami_config_name: str = ""
+    assistant_model: str
+    assistant_temperature: float
+    user_model: str
+    user_temperature: float
+    assistant_config_name: str = ""
     total_turns: int = 0
     started_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     finished_at: Optional[str] = None
@@ -61,6 +63,6 @@ class Conversation(BaseModel):
     persona: str
     collaboration: str = ""
     conversation_stop_reason: str = "turns_ended"
-    # "turns_ended" | "nami_succeeded" | "role_swap_error" | "llm_transient_error" | "llm_content_error" | "llm_non_transient_error"
+    # "turns_ended" | "assistant_succeeded" | "llm_transient_error" | "llm_content_error" | "llm_non_transient_error"
     messages: list[Message] = []
     metadata: ConversationMetadata

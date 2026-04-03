@@ -1,3 +1,5 @@
-max_turns: 5
+max_turns: 15
 delay: 0
 output_dir: "datasets"
+stop_phrase: "thank you, assistant"
+timezone: "UTC"

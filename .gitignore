@@ -1,8 +1,13 @@
-datasets/*.json
-datasets/*.docx
-datasets/*/
+datasets/
 .venv/
 __pycache__/
 *.pyc
 .env
 .DS_Store
+
+# Keep only example configs
+config/assistant/*.yml
+!config/assistant/assistant.yml
+config/scenarios/*.yml
+!config/scenarios/user.yml
+config/backups/

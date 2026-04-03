@@ -1,7 +1,4 @@
 conversation_rounds: 1
 
 scenarios:
-  - rv06_thiago
-  - rv07_fernanda
-  - rv08_diego
-  - rv05_luana
+  - user

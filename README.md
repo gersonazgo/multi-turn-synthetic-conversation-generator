@@ -1,14 +1,35 @@
-# nami-evals
+# Multi-Turn Synthetic Conversation Generator
 
-Gerador de conversas sinteticas multi-turno entre paciente (LLM) e NAMI (LLM).
+Generate multi-turn synthetic conversations between two LLMs — one acting as the assistant, the other as a user persona.
 
-## Playground (interface web)
+Useful when you're still building an MVP and don't have production traces yet, or when you can't access them. You can use it to:
 
-```bash
-uv run uvicorn src.server:app --reload --port 8000
-```
+- Iterate on system prompts and fix specification errors
+- Generate synthetic datasets for evaluations (evals)
+- Perform error analysis (open coding) on conversation traces
 
-Abrir http://localhost:8000. Permite selecionar prompts, gerar conversas em tempo real e editar/salvar prompts da Nami.
+![Conversation Playground](docs/screenshot.png)
+
+## How it works
+
+Two LLMs talk to each other: one plays the **assistant** (the system prompt you're evaluating) and another plays a **user** (a scripted persona with specific traits and goals). The conversation runs automatically until the user is satisfied (triggers a configurable stop phrase) or the turn limit is reached.
+
+This lets you stress-test prompts across different personas and scenarios without manual testing.
+
+## Features
+
+- **Web playground** for real-time conversation generation with SSE streaming
+- **Prompt editor** to edit and save assistant prompts directly in the browser
+- **Conversation history** sidebar with automatic JSON and DOCX export
+- **CLI** for scripted runs, batch execution, and CI integration
+- **Configurable stop phrase** to detect when the simulated user is satisfied
+- **Multi-provider support** via [litellm](https://github.com/BerriAI/litellm) (OpenAI, Anthropic, Google, Mistral, etc.)
+
+## Prerequisites
+
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+- At least one LLM API key (OpenAI, Anthropic, etc.)
 
 ## Setup
 
@@ -16,49 +37,94 @@ Abrir http://localhost:8000. Permite selecionar prompts, gerar conversas em temp
 uv sync
 ```
 
-Configurar API keys no `.env`:
+Configure API keys in `.env`:
 
 ```
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-## Comandos
+## Playground (web interface)
 
 ```bash
-# Rodar um cenario
-uv run nami-evals run p01_camila
-
-# Rodar batch (cenarios e rodadas definidos em config/batch.yml)
-uv run nami-evals run-batch
-
-# Rodar todos os cenarios (1 vez cada)
-uv run nami-evals run-all
-
-# Listar cenarios disponiveis
-uv run nami-evals list-scenarios
+uv run playground
 ```
 
-## Opcoes
+Open http://localhost:8000. Select an assistant prompt and a user scenario, then click Play to generate conversations in real-time. You can edit and save assistant prompts directly in the browser.
+
+## CLI
 
 ```bash
---max-turns 20        # Override de turnos maximos
---delay 5             # Delay em segundos entre chamadas (util para rate limits)
---nami-config path    # Usar outro arquivo de config da NAMI
---output-dir path     # Diretorio de saida (default: datasets/)
+# Run a single scenario
+uv run multi-turn-synthetic-conversation-generator run user
+
+# Run all scenarios
+uv run multi-turn-synthetic-conversation-generator run-all
+
+# Run batch (scenarios and rounds defined in config/batch.yml)
+uv run multi-turn-synthetic-conversation-generator run-batch
+
+# List available scenarios
+uv run multi-turn-synthetic-conversation-generator list-scenarios
 ```
 
-## Arquivos de config
+### Options
 
-| Arquivo | O que faz |
-|---|---|
-| `config/nami/*.yml` | System prompt + modelo + temperatura da NAMI |
-| `config/defaults.yml` | max_turns e output_dir |
-| `config/batch.yml` | Cenarios e quantidade de rodadas para o batch |
-| `config/scenarios/*.yml` | Um arquivo por cenario (persona do paciente) |
+```bash
+--max-turns 20              # Override max turns
+--delay 5                   # Delay in seconds between LLM calls (useful for rate limits)
+--assistant-config path     # Use a different assistant config file
+--output-dir path           # Output directory (default: datasets/)
+```
+
+## Configuration
+
+| File | Purpose |
+|------|---------|
+| `config/assistant/*.yml` | System prompt + model + temperature for the assistant |
+| `config/scenarios/*.yml` | User persona, scenario description, first message |
+| `config/defaults.yml` | max_turns, delay, output_dir, stop_phrase, timezone |
+| `config/batch.yml` | Scenarios and number of rounds for batch mode |
+
+### Creating a custom assistant prompt
+
+Create a YAML file in `config/assistant/`:
+
+```yaml
+model: "anthropic/claude-sonnet-4-6"
+temperature: 0.7
+
+system_prompt: |
+  You are a helpful assistant that...
+```
+
+### Creating a custom user scenario
+
+Create a YAML file in `config/scenarios/`:
+
+```yaml
+capability: Customer Support
+test_case: CS01 - Alex
+scenario: Software installation issue
+persona: Alex, 32, Marketing Manager
+collaboration: "Yes"
+first_message: "hey, I need help with..."
+
+model: "anthropic/claude-sonnet-4-6"
+temperature: 0.8
+
+system_prompt: |
+  # ROLE AND GOAL
+  You are Alex, a 32-year-old marketing manager...
+
+  # END CONDITION
+  When satisfied, respond with "thank you, assistant".
+```
+
+The `stop_phrase` in `config/defaults.yml` determines when the conversation ends successfully. The user scenario's system prompt should instruct the LLM to include this phrase when satisfied.
 
 ## Output
 
-Cada execucao gera dois arquivos em `datasets/`:
-- `.json` — dados estruturados completos
-- `.docx` — formatado para revisao humana no Word
+Each conversation generates two files in `datasets/`:
+- `.json` — structured data with full conversation, metadata, and stop reason
+- `.docx` — formatted document for human review

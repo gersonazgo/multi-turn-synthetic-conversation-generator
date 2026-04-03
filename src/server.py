@@ -17,17 +17,15 @@ load_dotenv()
 
 from .exporter import save_conversation
 from .generator import generate_conversation_stream
-from .models import Conversation, Defaults, NamiConfig, ScenarioConfig
+from .models import AssistantConfig, Conversation, Defaults, ScenarioConfig
 
-app = FastAPI(title="NAMI Playground")
+app = FastAPI(title="Conversation Playground")
 
 CONFIG_DIR = Path("config")
-NAMI_DIR = CONFIG_DIR / "nami"
+ASSISTANT_DIR = CONFIG_DIR / "assistant"
 SCENARIOS_DIR = CONFIG_DIR / "scenarios"
 BACKUPS_DIR = CONFIG_DIR / "backups"
 WEB_DIR = Path(__file__).parent / "web"
-
-BRT = timezone(timedelta(hours=-3))
 
 # State for cancel support
 _cancel_event: threading.Event | None = None
@@ -44,6 +42,16 @@ def _load_defaults() -> Defaults:
     return Defaults()
 
 
+def _parse_timezone(tz_str: str) -> timezone:
+    if tz_str == "UTC":
+        return timezone.utc
+    try:
+        hours = int(tz_str)
+        return timezone(timedelta(hours=hours))
+    except ValueError:
+        return timezone.utc
+
+
 # ── Static ──────────────────────────────────────────────────────────────────
 
 
@@ -55,11 +63,11 @@ async def index():
 # ── Config endpoints ────────────────────────────────────────────────────────
 
 
-@app.get("/api/configs/nami")
-async def list_nami_configs():
-    if not NAMI_DIR.exists():
+@app.get("/api/configs/assistant")
+async def list_assistant_configs():
+    if not ASSISTANT_DIR.exists():
         return []
-    return [p.stem for p in sorted(NAMI_DIR.glob("*.yml"))]
+    return [p.stem for p in sorted(ASSISTANT_DIR.glob("*.yml"))]
 
 
 @app.get("/api/configs/scenarios")
@@ -77,34 +85,36 @@ async def list_scenario_configs():
     return configs
 
 
-@app.get("/api/configs/nami/{name}")
-async def get_nami_config(name: str):
-    path = NAMI_DIR / f"{name}.yml"
+@app.get("/api/configs/assistant/{name}")
+async def get_assistant_config(name: str):
+    path = ASSISTANT_DIR / f"{name}.yml"
     if not path.exists():
-        raise HTTPException(404, f"Config não encontrada: {name}")
+        raise HTTPException(404, f"Config not found: {name}")
     return JSONResponse({"name": name, "content": path.read_text(encoding="utf-8")})
 
 
-@app.put("/api/configs/nami/{name}")
-async def save_nami_config(name: str, request: Request):
+@app.put("/api/configs/assistant/{name}")
+async def save_assistant_config(name: str, request: Request):
     body = await request.json()
     content = body.get("content", "")
     if not content.strip():
-        raise HTTPException(400, "Conteúdo vazio")
+        raise HTTPException(400, "Empty content")
 
     # Validate YAML
     try:
         parsed = yaml.safe_load(content)
-        NamiConfig(**parsed)
+        AssistantConfig(**parsed)
     except Exception as e:
-        raise HTTPException(400, f"YAML inválido: {e}")
+        raise HTTPException(400, f"Invalid YAML: {e}")
 
-    path = NAMI_DIR / f"{name}.yml"
+    path = ASSISTANT_DIR / f"{name}.yml"
 
     # Backup if file exists
     if path.exists():
         BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(BRT).strftime("%Y%m%d_%H%M%S")
+        defaults = _load_defaults()
+        tz = _parse_timezone(defaults.timezone)
+        timestamp = datetime.now(tz).strftime("%Y%m%d_%H%M%S")
         backup_path = BACKUPS_DIR / f"{name}_{timestamp}.yml"
         backup_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
 
@@ -116,21 +126,22 @@ async def save_nami_config(name: str, request: Request):
 
 
 @app.get("/api/conversation/stream")
-async def conversation_stream(nami: str, scenario: str):
+async def conversation_stream(assistant: str, scenario: str):
     global _cancel_event
 
-    nami_path = NAMI_DIR / f"{nami}.yml"
+    assistant_path = ASSISTANT_DIR / f"{assistant}.yml"
     scenario_path = SCENARIOS_DIR / f"{scenario}.yml"
 
-    if not nami_path.exists():
-        raise HTTPException(404, f"Config Nami não encontrada: {nami}")
+    if not assistant_path.exists():
+        raise HTTPException(404, f"Assistant config not found: {assistant}")
     if not scenario_path.exists():
-        raise HTTPException(404, f"Cenário não encontrado: {scenario}")
+        raise HTTPException(404, f"Scenario not found: {scenario}")
 
-    nami_config = NamiConfig(**_load_yaml(nami_path))
+    assistant_config = AssistantConfig(**_load_yaml(assistant_path))
     scenario_config = ScenarioConfig(**_load_yaml(scenario_path))
     defaults = _load_defaults()
     max_turns = scenario_config.max_turns or defaults.max_turns
+    tz = _parse_timezone(defaults.timezone)
 
     _cancel_event = threading.Event()
     cancel = _cancel_event
@@ -140,21 +151,24 @@ async def conversation_stream(nami: str, scenario: str):
 
     def run_generator():
         try:
-            for event in generate_conversation_stream(nami_config, scenario_config, max_turns, cancel, nami_config_name=nami):
+            for event in generate_conversation_stream(
+                assistant_config, scenario_config, max_turns, cancel,
+                assistant_config_name=assistant, stop_phrase=defaults.stop_phrase, tz=tz,
+            ):
                 # Save conversation BEFORE queueing done event (avoids race with frontend reload)
                 if event["type"] == "done" and event.get("conversation"):
                     try:
                         conv = Conversation(**event["conversation"])
                         save_conversation(conv, defaults.output_dir)
-                        print(f"[playground] Conversa salva: {conv.id}")
+                        print(f"[playground] Conversation saved: {conv.id}")
                     except Exception as save_err:
-                        print(f"[playground] ERRO ao salvar conversa: {save_err}", flush=True)
+                        print(f"[playground] ERROR saving conversation: {save_err}", flush=True)
                         import traceback
                         traceback.print_exc()
                 queue.put(event)
             queue.put(None)  # sentinel
         except Exception as e:
-            print(f"[playground] ERRO no generator: {e}", flush=True)
+            print(f"[playground] ERROR in generator: {e}", flush=True)
             import traceback
             traceback.print_exc()
             queue.put({"type": "error", "message": str(e)})
@@ -165,13 +179,13 @@ async def conversation_stream(nami: str, scenario: str):
         yield {
             "event": "metadata",
             "data": json.dumps({
-                "nami_config": nami,
+                "assistant_config": assistant,
                 "scenario": scenario,
                 "test_case": scenario_config.test_case,
                 "persona": scenario_config.persona,
                 "max_turns": max_turns,
-                "nami_model": nami_config.model,
-                "patient_model": scenario_config.model,
+                "assistant_model": assistant_config.model,
+                "user_model": scenario_config.model,
             }),
         }
 
@@ -222,14 +236,15 @@ async def list_conversations():
     for p in sorted(datasets_dir.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True):
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
+            meta = data.get("metadata", {})
             conversations.append({
                 "id": data.get("id", p.stem),
                 "test_case": data.get("test_case", ""),
-                "nami_model": data.get("metadata", {}).get("nami_model", ""),
-                "nami_config_name": data.get("metadata", {}).get("nami_config_name", ""),
+                "assistant_model": meta.get("assistant_model", meta.get("nami_model", "")),
+                "assistant_config_name": meta.get("assistant_config_name", meta.get("nami_config_name", "")),
                 "stop_reason": data.get("conversation_stop_reason", ""),
-                "started_at": data.get("metadata", {}).get("started_at", ""),
-                "total_turns": data.get("metadata", {}).get("total_turns", 0),
+                "started_at": meta.get("started_at", ""),
+                "total_turns": meta.get("total_turns", 0),
             })
         except (json.JSONDecodeError, KeyError):
             continue
@@ -243,7 +258,7 @@ async def get_conversation(conv_id: str):
     datasets_dir = Path(defaults.output_dir)
     path = datasets_dir / f"{conv_id}.json"
     if not path.exists():
-        raise HTTPException(404, f"Conversa não encontrada: {conv_id}")
+        raise HTTPException(404, f"Conversation not found: {conv_id}")
     data = json.loads(path.read_text(encoding="utf-8"))
     return data
 
