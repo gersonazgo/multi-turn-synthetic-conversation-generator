@@ -1,8 +1,7 @@
-conversation_rounds: 3
+conversation_rounds: 1
 
 scenarios:
-  - rv01_camila
-  - rv02_rafael
-  - rv03_beatriz
-  - rv04_marcos
+  - rv06_thiago
+  - rv07_fernanda
+  - rv08_diego
   - rv05_luana

@@ -47,6 +47,7 @@ class ConversationMetadata(BaseModel):
     nami_temperature: float
     patient_model: str
     patient_temperature: float
+    nami_config_name: str = ""
     total_turns: int = 0
     started_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     finished_at: Optional[str] = None

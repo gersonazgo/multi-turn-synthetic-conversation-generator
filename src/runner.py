@@ -30,6 +30,7 @@ STOP_LABELS = {
 }
 
 CONFIG_DIR = Path("config")
+NAMI_DIR = CONFIG_DIR / "nami"
 SCENARIOS_DIR = CONFIG_DIR / "scenarios"
 
 
@@ -45,7 +46,7 @@ def _load_defaults() -> Defaults:
 
 
 def _load_nami_config(path: Optional[Path] = None) -> NamiConfig:
-    config_path = path or CONFIG_DIR / "nami.yml"
+    config_path = path or NAMI_DIR / "nami.yml"
     return NamiConfig(**_load_yaml(config_path))
 
 

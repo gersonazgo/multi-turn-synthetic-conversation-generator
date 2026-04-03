@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import threading
 import time
+from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 
 import litellm
@@ -247,3 +249,122 @@ def generate_conversation(
     conversation.metadata.finished_at = datetime.now(timezone.utc).isoformat()
 
     return conversation
+
+
+def generate_conversation_stream(
+    nami_config: NamiConfig,
+    scenario: ScenarioConfig,
+    max_turns: int,
+    cancel_event: threading.Event | None = None,
+    nami_config_name: str = "",
+) -> Generator[dict, None, None]:
+    """Versão streaming de generate_conversation. Faz yield de eventos dict."""
+    BRT = timezone(timedelta(hours=-3))
+    conv_id = f"{scenario.test_case}_{datetime.now(BRT).strftime('%Y%m%d_%H%M%S')}"
+
+    conversation = Conversation(
+        id=conv_id,
+        capability=scenario.capability,
+        test_case=scenario.test_case,
+        scenario=scenario.scenario,
+        persona=scenario.persona,
+        collaboration=scenario.collaboration,
+        messages=[],
+        metadata=ConversationMetadata(
+            nami_model=nami_config.model,
+            nami_temperature=nami_config.temperature,
+            patient_model=scenario.model,
+            patient_temperature=scenario.temperature,
+            nami_config_name=nami_config_name,
+        ),
+    )
+
+    nami_history: list[dict] = [
+        {"role": "system", "content": nami_config.system_prompt, "cache_control": {"type": "ephemeral"}},
+    ]
+    patient_history: list[dict] = [
+        {"role": "system", "content": scenario.system_prompt, "cache_control": {"type": "ephemeral"}},
+    ]
+
+    # First message
+    first_msg = Message(role="patient", content=scenario.first_message)
+    conversation.messages.append(first_msg)
+    nami_history.append({"role": "user", "content": scenario.first_message})
+    patient_history.append({"role": "assistant", "content": scenario.first_message})
+
+    yield {"type": "message", "role": "patient", "content": scenario.first_message, "turn": 0}
+
+    stop_reason = "turns_ended"
+    turn = 0
+
+    try:
+        for turn in range(1, max_turns + 1):
+            if cancel_event and cancel_event.is_set():
+                stop_reason = "cancelled"
+                break
+
+            # NAMI responds
+            yield {"type": "status", "text": f"Turno {turn}/{max_turns} — NAMI pensando..."}
+            nami_response = _call_llm(nami_config.model, nami_config.temperature, nami_history)
+            nami_msg = Message(role="nami", content=nami_response)
+            conversation.messages.append(nami_msg)
+            nami_history.append({"role": "assistant", "content": nami_response})
+            patient_history.append({"role": "user", "content": nami_response})
+
+            yield {"type": "message", "role": "nami", "content": nami_response, "turn": turn}
+
+            if turn >= max_turns:
+                break
+
+            if cancel_event and cancel_event.is_set():
+                stop_reason = "cancelled"
+                break
+
+            # Patient responds
+            yield {"type": "status", "text": f"Turno {turn}/{max_turns} — {scenario.persona} pensando..."}
+            patient_response = _call_llm(scenario.model, scenario.temperature, patient_history)
+
+            if _detect_role_swap(patient_response, scenario.persona):
+                retry_messages = patient_history + [
+                    {"role": "user", "content": f"[Lembre-se: você é {scenario.persona}. Responda APENAS como paciente, nunca como terapeuta ou conselheira.]"},
+                ]
+                patient_response = _call_llm(scenario.model, scenario.temperature, retry_messages)
+                if _detect_role_swap(patient_response, scenario.persona):
+                    stop_reason = "role_swap_error"
+                    break
+
+            patient_msg = Message(role="patient", content=patient_response)
+            conversation.messages.append(patient_msg)
+            patient_history.append({"role": "assistant", "content": patient_response})
+            nami_history.append({"role": "user", "content": patient_response})
+
+            yield {"type": "message", "role": "patient", "content": patient_response, "turn": turn}
+
+            if _is_patient_satisfied(patient_response):
+                if cancel_event and cancel_event.is_set():
+                    stop_reason = "cancelled"
+                    break
+                yield {"type": "status", "text": f"Turno {turn + 1}/{max_turns} — NAMI fechando..."}
+                nami_closing = _call_llm(nami_config.model, nami_config.temperature, nami_history)
+                nami_closing_msg = Message(role="nami", content=nami_closing)
+                conversation.messages.append(nami_closing_msg)
+                yield {"type": "message", "role": "nami", "content": nami_closing, "turn": turn + 1}
+                stop_reason = "nami_succeeded"
+                turn += 1
+                break
+
+    except LLMTransientError:
+        stop_reason = "llm_transient_error"
+        yield {"type": "error", "message": "Erro transiente persistente (rate limit / timeout / server)."}
+    except LLMContentError:
+        stop_reason = "llm_content_error"
+        yield {"type": "error", "message": "LLM retornou conteúdo vazio ou recusado."}
+    except LLMNonTransientError as e:
+        stop_reason = "llm_non_transient_error"
+        yield {"type": "error", "message": f"Erro não-transiente: {e}"}
+
+    conversation.conversation_stop_reason = stop_reason
+    conversation.metadata.total_turns = turn
+    conversation.metadata.finished_at = datetime.now(timezone.utc).isoformat()
+
+    yield {"type": "done", "stop_reason": stop_reason, "total_turns": turn, "conversation": conversation.model_dump()}

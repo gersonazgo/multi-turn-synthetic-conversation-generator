@@ -11,10 +11,14 @@ dependencies = [
     "rich>=13.0",
     "python-dotenv>=1.0",
     "python-docx>=1.2.0",
+    "fastapi>=0.100",
+    "uvicorn>=0.20",
+    "sse-starlette>=1.6",
 ]
 
 [project.scripts]
 nami-evals = "src.runner:app"
+nami-playground = "src.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

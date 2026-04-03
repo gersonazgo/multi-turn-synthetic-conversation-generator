@@ -2,6 +2,14 @@
 
 Gerador de conversas sinteticas multi-turno entre paciente (LLM) e NAMI (LLM).
 
+## Playground (interface web)
+
+```bash
+uv run uvicorn src.server:app --reload --port 8000
+```
+
+Abrir http://localhost:8000. Permite selecionar prompts, gerar conversas em tempo real e editar/salvar prompts da Nami.
+
 ## Setup
 
 ```bash
@@ -44,7 +52,7 @@ uv run nami-evals list-scenarios
 
 | Arquivo | O que faz |
 |---|---|
-| `config/nami.yml` | System prompt + modelo + temperatura da NAMI |
+| `config/nami/*.yml` | System prompt + modelo + temperatura da NAMI |
 | `config/defaults.yml` | max_turns e output_dir |
 | `config/batch.yml` | Cenarios e quantidade de rodadas para o batch |
 | `config/scenarios/*.yml` | Um arquivo por cenario (persona do paciente) |
