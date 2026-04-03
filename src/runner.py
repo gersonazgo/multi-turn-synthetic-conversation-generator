@@ -30,7 +30,7 @@ STOP_LABELS = {
 
 CONFIG_DIR = Path("config")
 ASSISTANT_DIR = CONFIG_DIR / "assistant"
-SCENARIOS_DIR = CONFIG_DIR / "scenarios"
+USER_DIR = CONFIG_DIR / "user"
 
 
 def _load_yaml(path: Path) -> dict:
@@ -60,16 +60,16 @@ def _load_assistant_config(path: Optional[Path] = None) -> AssistantConfig:
 
 
 def _load_scenario(name: str) -> ScenarioConfig:
-    scenario_path = SCENARIOS_DIR / f"{name}.yml"
+    scenario_path = USER_DIR / f"{name}.yml"
     if not scenario_path.exists():
         raise FileNotFoundError(f"File not found: {scenario_path}")
     return ScenarioConfig(**_load_yaml(scenario_path))
 
 
 def _list_scenarios() -> list[str]:
-    if not SCENARIOS_DIR.exists():
+    if not USER_DIR.exists():
         return []
-    return [p.stem for p in SCENARIOS_DIR.glob("*.yml")]
+    return [p.stem for p in USER_DIR.glob("*.yml")]
 
 
 def _run_scenario(
@@ -129,10 +129,10 @@ def run_all(
     output_dir: Optional[str] = typer.Option(None, "--output-dir", help="Output directory"),
     delay: Optional[float] = typer.Option(None, "--delay", help="Delay in seconds between LLM calls"),
 ) -> None:
-    """Run all scenarios in config/scenarios/."""
+    """Run all scenarios in config/user/."""
     scenarios = _list_scenarios()
     if not scenarios:
-        console.print("[red]No scenarios found in config/scenarios/[/]")
+        console.print("[red]No scenarios found in config/user/[/]")
         raise typer.Exit(1)
 
     defaults = _load_defaults()

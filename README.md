@@ -23,7 +23,7 @@ This lets you stress-test prompts across different personas and scenarios withou
 - **Conversation history** sidebar with automatic JSON and DOCX export
 - **CLI** for scripted runs, batch execution, and CI integration
 - **Configurable stop phrase** to detect when the simulated user is satisfied
-- **Multi-provider support** via [litellm](https://github.com/BerriAI/litellm) (OpenAI, Anthropic, Google, Mistral, etc.)
+- **Multi-provider support** via [litellm](https://github.com/BerriAI/litellm) (OpenAI, Anthropic, Groq, Google Gemini, Hugging Face, Mistral, etc.)
 
 ## Prerequisites
 
@@ -42,6 +42,9 @@ Configure API keys in `.env`:
 ```
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
+GROQ_API_KEY=gsk_...
+GEMINI_API_KEY=...
+HF_TOKEN=hf_...
 ```
 
 ## Playground (web interface)
@@ -82,7 +85,7 @@ uv run multi-turn-synthetic-conversation-generator list-scenarios
 | File | Purpose |
 |------|---------|
 | `config/assistant/*.yml` | System prompt + model + temperature for the assistant |
-| `config/scenarios/*.yml` | User persona, scenario description, first message |
+| `config/user/*.yml` | User persona, scenario description, first message |
 | `config/defaults.yml` | max_turns, delay, output_dir, stop_phrase, timezone |
 | `config/batch.yml` | Scenarios and number of rounds for batch mode |
 
@@ -100,7 +103,7 @@ system_prompt: |
 
 ### Creating a custom user scenario
 
-Create a YAML file in `config/scenarios/`:
+Create a YAML file in `config/user/`:
 
 ```yaml
 capability: Customer Support

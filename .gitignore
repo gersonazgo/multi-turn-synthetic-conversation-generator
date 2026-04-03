@@ -8,6 +8,6 @@ __pycache__/
 # Keep only example configs
 config/assistant/*.yml
 !config/assistant/assistant.yml
-config/scenarios/*.yml
-!config/scenarios/user.yml
+config/user/*.yml
+!config/user/user.yml
 config/backups/

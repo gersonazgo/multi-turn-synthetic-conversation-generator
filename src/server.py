@@ -23,7 +23,7 @@ app = FastAPI(title="Conversation Playground")
 
 CONFIG_DIR = Path("config")
 ASSISTANT_DIR = CONFIG_DIR / "assistant"
-SCENARIOS_DIR = CONFIG_DIR / "scenarios"
+USER_DIR = CONFIG_DIR / "user"
 BACKUPS_DIR = CONFIG_DIR / "backups"
 WEB_DIR = Path(__file__).parent / "web"
 
@@ -70,12 +70,12 @@ async def list_assistant_configs():
     return [p.stem for p in sorted(ASSISTANT_DIR.glob("*.yml"))]
 
 
-@app.get("/api/configs/scenarios")
+@app.get("/api/configs/user")
 async def list_scenario_configs():
-    if not SCENARIOS_DIR.exists():
+    if not USER_DIR.exists():
         return []
     configs = []
-    for p in sorted(SCENARIOS_DIR.glob("*.yml")):
+    for p in sorted(USER_DIR.glob("*.yml")):
         data = _load_yaml(p)
         configs.append({
             "name": p.stem,
@@ -130,7 +130,7 @@ async def conversation_stream(assistant: str, scenario: str):
     global _cancel_event
 
     assistant_path = ASSISTANT_DIR / f"{assistant}.yml"
-    scenario_path = SCENARIOS_DIR / f"{scenario}.yml"
+    scenario_path = USER_DIR / f"{scenario}.yml"
 
     if not assistant_path.exists():
         raise HTTPException(404, f"Assistant config not found: {assistant}")

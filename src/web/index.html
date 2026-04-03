@@ -332,7 +332,7 @@ async function loadAssistantConfigs() {
 }
 
 async function loadScenarioConfigs() {
-  const res = await fetch("/api/configs/scenarios");
+  const res = await fetch("/api/configs/user");
   const configs = await res.json();
   const select = document.getElementById("select-scenario");
   select.innerHTML = '<option value="">-- Select --</option>';
