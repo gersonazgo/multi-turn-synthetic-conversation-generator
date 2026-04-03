@@ -1,4 +1,5 @@
-datasets/
+datasets/*
+!datasets/.gitkeep
 .venv/
 __pycache__/
 *.pyc
