@@ -122,6 +122,57 @@ async def save_assistant_config(name: str, request: Request):
     return {"status": "saved", "name": name}
 
 
+@app.get("/api/configs/assistant/{name}/prompt")
+async def get_assistant_prompt(name: str):
+    path = ASSISTANT_DIR / f"{name}.yml"
+    if not path.exists():
+        raise HTTPException(404, f"Config not found: {name}")
+    data = _load_yaml(path)
+    config = AssistantConfig(**data)
+    return JSONResponse({
+        "model": config.model,
+        "temperature": config.temperature,
+        "system_prompt": config.system_prompt,
+    })
+
+
+@app.put("/api/configs/assistant/{name}/prompt")
+async def save_assistant_prompt(name: str, request: Request):
+    body = await request.json()
+    system_prompt = body.get("system_prompt", "")
+    if not system_prompt.strip():
+        raise HTTPException(400, "Empty system_prompt")
+
+    path = ASSISTANT_DIR / f"{name}.yml"
+    if not path.exists():
+        raise HTTPException(404, f"Config not found: {name}")
+
+    # Load existing config to preserve model/temperature
+    data = _load_yaml(path)
+    data["system_prompt"] = system_prompt
+
+    # Validate
+    try:
+        AssistantConfig(**data)
+    except Exception as e:
+        raise HTTPException(400, f"Invalid config: {e}")
+
+    # Backup
+    BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+    defaults = _load_defaults()
+    tz = _parse_timezone(defaults.timezone)
+    timestamp = datetime.now(tz).strftime("%Y%m%d_%H%M%S")
+    backup_path = BACKUPS_DIR / f"{name}_{timestamp}.yml"
+    backup_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    # Write back with proper YAML formatting
+    path.write_text(
+        yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False, width=1000),
+        encoding="utf-8",
+    )
+    return {"status": "saved", "name": name}
+
+
 # ── Conversation stream ────────────────────────────────────────────────────
 
 

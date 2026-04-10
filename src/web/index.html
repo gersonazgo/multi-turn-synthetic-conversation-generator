@@ -161,12 +161,23 @@
     text-align: center;
   }
 
+  /* Resizer handle */
+  #resizer {
+    width: 5px;
+    cursor: col-resize;
+    background: #ddd;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  #resizer:hover, #resizer.active {
+    background: #1a73e8;
+  }
+
   /* Controls panel */
   #controls {
     width: 380px;
-    min-width: 380px;
+    min-width: 280px;
     background: #fff;
-    border-left: 1px solid #ddd;
     display: flex;
     flex-direction: column;
     padding: 16px;
@@ -247,6 +258,124 @@
     margin-top: 4px;
     min-height: 16px;
   }
+
+  /* View toggle */
+  .view-toggle {
+    display: flex;
+    gap: 0;
+    margin-bottom: 4px;
+  }
+  .view-toggle button {
+    flex: 1;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid #ccc;
+    background: #f5f5f5;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .view-toggle button:first-child {
+    border-radius: 4px 0 0 4px;
+  }
+  .view-toggle button:last-child {
+    border-radius: 0 4px 4px 0;
+    border-left: none;
+  }
+  .view-toggle button.active {
+    background: #1a73e8;
+    color: #fff;
+    border-color: #1a73e8;
+  }
+
+  /* Structured prompt view */
+  #prompt-structure {
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 8px 0;
+    background: #fafafa;
+    min-height: 200px;
+    font-size: 13px;
+  }
+  .section-item {
+    cursor: pointer;
+    user-select: none;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    padding: 5px 10px;
+    gap: 6px;
+    transition: background 0.1s;
+  }
+  .section-header:hover {
+    background: #e8f0fe;
+  }
+  .section-arrow {
+    font-size: 10px;
+    color: #888;
+    width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+    transition: transform 0.15s;
+  }
+  .section-arrow.expanded {
+    transform: rotate(90deg);
+  }
+  .section-arrow.leaf {
+    visibility: hidden;
+  }
+  .section-label {
+    font-weight: 600;
+    color: #333;
+  }
+  .section-level-1 {
+    font-size: 14px;
+  }
+  .section-level-1 > .section-header .section-label {
+    font-weight: 700;
+    color: #222;
+  }
+  .section-level-2 .section-header {
+    padding-left: 26px;
+  }
+  .section-level-2 .section-label {
+    font-size: 13px;
+  }
+  .section-level-3 .section-header {
+    padding-left: 46px;
+  }
+  .section-level-3 .section-label {
+    font-weight: 500;
+    color: #555;
+    font-size: 12px;
+  }
+  .section-children {
+    display: none;
+  }
+  .section-children.open {
+    display: block;
+  }
+
+  /* Config meta info */
+  #config-meta {
+    display: none;
+    font-size: 11px;
+    color: #666;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 6px 10px;
+    gap: 8px;
+  }
+  #config-meta span {
+    font-weight: 600;
+    color: #333;
+  }
 </style>
 </head>
 <body>
@@ -263,6 +392,9 @@
   <div id="messages"></div>
   <div id="result-bar"></div>
 </div>
+
+<!-- Resizer -->
+<div id="resizer"></div>
 
 <!-- Controls -->
 <div id="controls">
@@ -281,9 +413,18 @@
     <button id="btn-stop" disabled>&#9632; Stop</button>
   </div>
 
+  <div id="config-meta">
+    Model: <span id="meta-model">—</span> &nbsp;|&nbsp; Temperature: <span id="meta-temp">—</span>
+  </div>
+
   <div id="editor-container">
-    <label for="editor">Prompt Editor (Assistant)</label>
+    <label>Prompt (Assistant)</label>
+    <div class="view-toggle">
+      <button id="btn-view-editor" class="active" onclick="switchView('editor')">Editor</button>
+      <button id="btn-view-structure" onclick="switchView('structure')">Outline</button>
+    </div>
     <textarea id="editor" placeholder="Select an assistant prompt to edit..." spellcheck="false"></textarea>
+    <div id="prompt-structure"></div>
     <div id="save-status"></div>
   </div>
 
@@ -352,18 +493,23 @@ async function onAssistantSelect() {
   currentAssistant = name;
   const editor = document.getElementById("editor");
   const saveStatus = document.getElementById("save-status");
+  const configMeta = document.getElementById("config-meta");
   saveStatus.textContent = "";
 
   if (!name) {
     editor.value = "";
+    configMeta.style.display = "none";
     document.getElementById("btn-save").disabled = true;
     updatePlayButton();
     return;
   }
 
-  const res = await fetch(`/api/configs/assistant/${name}`);
+  const res = await fetch(`/api/configs/assistant/${name}/prompt`);
   const data = await res.json();
-  editor.value = data.content;
+  editor.value = data.system_prompt;
+  document.getElementById("meta-model").textContent = data.model;
+  document.getElementById("meta-temp").textContent = data.temperature;
+  configMeta.style.display = "flex";
   document.getElementById("btn-save").disabled = false;
   updatePlayButton();
 }
@@ -372,14 +518,14 @@ async function onAssistantSelect() {
 
 async function savePrompt() {
   if (!currentAssistant) return;
-  const content = document.getElementById("editor").value;
+  const systemPrompt = document.getElementById("editor").value;
   const saveStatus = document.getElementById("save-status");
 
   try {
-    const res = await fetch(`/api/configs/assistant/${currentAssistant}`, {
+    const res = await fetch(`/api/configs/assistant/${currentAssistant}/prompt`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ system_prompt: systemPrompt }),
     });
     if (!res.ok) {
       const err = await res.json();
@@ -580,6 +726,170 @@ async function loadConversation(id, element) {
   }
   resultBar.textContent = `Result: ${stopLabel}`;
 }
+
+// ── View toggle ──────────────────────────────────────────────────────────
+
+let currentView = "editor";
+
+function switchView(view) {
+  currentView = view;
+  const editor = document.getElementById("editor");
+  const structure = document.getElementById("prompt-structure");
+  const btnEditor = document.getElementById("btn-view-editor");
+  const btnStructure = document.getElementById("btn-view-structure");
+  const btnSave = document.getElementById("btn-save");
+
+  if (view === "editor") {
+    editor.style.display = "";
+    structure.style.display = "none";
+    btnEditor.classList.add("active");
+    btnStructure.classList.remove("active");
+    btnSave.style.display = "";
+  } else {
+    editor.style.display = "none";
+    structure.style.display = "block";
+    btnEditor.classList.remove("active");
+    btnStructure.classList.add("active");
+    btnSave.style.display = "none";
+    renderStructure();
+  }
+}
+
+function renderStructure() {
+  const container = document.getElementById("prompt-structure");
+  const promptText = document.getElementById("editor").value;
+  container.innerHTML = "";
+
+  if (!promptText.trim()) {
+    container.innerHTML = '<div style="padding:10px;color:#888;">Nenhum system_prompt encontrado.</div>';
+    return;
+  }
+  const lines = promptText.split("\n");
+  // Build 3-level tree: # → ## → ###
+  const tree = []; // level-1 items
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Order matters: check ### before ## before #
+    const h3 = trimmed.match(/^###\s+(.+)/);
+    const h2 = !h3 && trimmed.match(/^##\s+(.+)/);
+    const h1 = !h3 && !h2 && trimmed.match(/^#\s+(.+)/);
+
+    if (h1) {
+      tree.push({ level: 1, label: h1[1].replace(/\s*#\s*$/, "").trim(), children: [] });
+    } else if (h2) {
+      const label = h2[1].replace(/\s*##\s*$/, "").trim();
+      if (tree.length > 0) {
+        tree[tree.length - 1].children.push({ level: 2, label, children: [] });
+      } else {
+        // h2 without a parent h1 — promote to top level
+        tree.push({ level: 2, label, children: [] });
+      }
+    } else if (h3) {
+      const label = h3[1].replace(/\s*###\s*$/, "").trim();
+      // Find nearest h2 parent, or nearest h1
+      let parent = null;
+      if (tree.length > 0) {
+        const lastTop = tree[tree.length - 1];
+        if (lastTop.children.length > 0) {
+          parent = lastTop.children[lastTop.children.length - 1];
+        } else {
+          parent = lastTop;
+        }
+      }
+      if (parent) {
+        if (!parent.children) parent.children = [];
+        parent.children.push({ level: 3, label });
+      }
+    }
+  }
+
+  if (tree.length === 0) {
+    container.innerHTML = '<div style="padding:10px;color:#888;">Nenhum header markdown encontrado.</div>';
+    return;
+  }
+
+  function buildNode(node, levelClass) {
+    const item = document.createElement("div");
+    item.className = "section-item " + levelClass;
+
+    const hasChildren = node.children && node.children.length > 0;
+
+    const header = document.createElement("div");
+    header.className = "section-header";
+
+    const arrow = document.createElement("span");
+    arrow.className = "section-arrow" + (hasChildren ? "" : " leaf");
+    arrow.textContent = "\u25B6";
+
+    const label = document.createElement("span");
+    label.className = "section-label";
+    label.textContent = node.label;
+
+    header.appendChild(arrow);
+    header.appendChild(label);
+    item.appendChild(header);
+
+    if (hasChildren) {
+      const childrenContainer = document.createElement("div");
+      childrenContainer.className = "section-children";
+
+      const childLevelMap = { "section-level-1": "section-level-2", "section-level-2": "section-level-3" };
+      const childLevel = childLevelMap[levelClass] || "section-level-3";
+
+      node.children.forEach(child => {
+        childrenContainer.appendChild(buildNode(child, childLevel));
+      });
+
+      item.appendChild(childrenContainer);
+
+      header.addEventListener("click", () => {
+        const isOpen = childrenContainer.classList.toggle("open");
+        arrow.classList.toggle("expanded", isOpen);
+      });
+    }
+
+    return item;
+  }
+
+  tree.forEach(section => {
+    const levelClass = section.level === 1 ? "section-level-1" : "section-level-2";
+    container.appendChild(buildNode(section, levelClass));
+  });
+}
+
+// ── Resizer ──────────────────────────────────────────────────────────────
+
+(function initResizer() {
+  const resizer = document.getElementById("resizer");
+  const controls = document.getElementById("controls");
+  let startX, startWidth;
+
+  resizer.addEventListener("mousedown", (e) => {
+    startX = e.clientX;
+    startWidth = controls.offsetWidth;
+    resizer.classList.add("active");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    function onMouseMove(e) {
+      const delta = startX - e.clientX;
+      const newWidth = Math.max(280, Math.min(800, startWidth + delta));
+      controls.style.width = newWidth + "px";
+    }
+
+    function onMouseUp() {
+      resizer.classList.remove("active");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    }
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  });
+})();
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 
