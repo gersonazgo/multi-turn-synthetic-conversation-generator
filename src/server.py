@@ -165,9 +165,19 @@ async def save_assistant_prompt(name: str, request: Request):
     backup_path = BACKUPS_DIR / f"{name}_{timestamp}.yml"
     backup_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
 
-    # Write back with proper YAML formatting
+    # Write back preserving block scalar style for system_prompt
+    class _BlockDumper(yaml.SafeDumper):
+        pass
+
+    def _str_representer(dumper, data):
+        if "\n" in data:
+            return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+
+    _BlockDumper.add_representer(str, _str_representer)
+
     path.write_text(
-        yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False, width=1000),
+        yaml.dump(data, Dumper=_BlockDumper, allow_unicode=True, default_flow_style=False, sort_keys=False),
         encoding="utf-8",
     )
     return {"status": "saved", "name": name}

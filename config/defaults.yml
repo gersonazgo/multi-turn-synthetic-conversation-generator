@@ -1,5 +1,5 @@
-max_turns: 15
+max_turns: 20
 delay: 0
 output_dir: "datasets"
-stop_phrase: "thank you, assistant"
+stop_phrase: "Obg, Nami"
 timezone: "UTC"

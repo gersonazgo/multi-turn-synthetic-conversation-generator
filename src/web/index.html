@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Conversation Playground</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/markdown/markdown.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/mode/overlay.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -135,7 +140,7 @@
     border-right: 8px solid #fff;
   }
 
-  /* Assistant bubble — right, green */
+  /* Assistant bubble group — right aligned */
   .message.assistant {
     background: #dcf8c6;
     align-self: flex-end;
@@ -151,6 +156,77 @@
     border-top: 0 solid transparent;
     border-bottom: 10px solid transparent;
     border-left: 8px solid #dcf8c6;
+  }
+
+  /* Structured assistant output (reasoning + answer as separate blocks) */
+  .message.assistant.structured {
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .message.assistant.structured::before { display: none; }
+  .message.assistant.structured .speaker { display: none; }
+  .message.assistant.structured .content { display: none; }
+
+  .bubble-reasoning {
+    background: #fff8e1;
+    border-left: 3px solid #f9a825;
+    border-radius: 8px;
+    padding: 6px 12px;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.08);
+  }
+  .bubble-reasoning .bubble-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #f57f17;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+  }
+  .bubble-reasoning .bubble-text {
+    font-size: 13px;
+    color: #5d4037;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.45;
+    font-style: italic;
+  }
+
+  .bubble-answer {
+    background: #dcf8c6;
+    border-radius: 8px;
+    border-top-right-radius: 0;
+    padding: 6px 12px;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.08);
+    position: relative;
+  }
+  .bubble-answer::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: -8px;
+    width: 0; height: 0;
+    border-top: 0 solid transparent;
+    border-bottom: 10px solid transparent;
+    border-left: 8px solid #dcf8c6;
+  }
+  .bubble-answer .bubble-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #1e8850;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+  }
+  .bubble-answer .bubble-text {
+    font-size: 14px;
+    color: #333;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.45;
   }
 
   #result-bar {
@@ -239,18 +315,18 @@
     flex-direction: column;
     min-height: 0;
   }
-  #editor {
+  #editor-wrapper {
     flex: 1;
-    width: 100%;
+    min-height: 200px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  #editor-wrapper .CodeMirror {
+    height: 100%;
     font-family: "SF Mono", "Fira Code", "Consolas", monospace;
     font-size: 12px;
     line-height: 1.5;
-    padding: 8px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    resize: none;
-    min-height: 200px;
-    tab-size: 2;
   }
   #save-status {
     font-size: 11px;
@@ -361,6 +437,47 @@
     display: block;
   }
 
+  /* Display toggle */
+  #display-toggle {
+    padding: 4px 0;
+  }
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #555;
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle-label input[type="checkbox"] {
+    accent-color: #1a73e8;
+    cursor: pointer;
+  }
+
+  /* Toast notification */
+  #toast {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.8);
+    background: rgba(40, 167, 69, 0.95);
+    color: #fff;
+    font-size: 18px;
+    font-weight: 700;
+    padding: 20px 40px;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    z-index: 9999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s, transform 0.3s;
+  }
+  #toast.visible {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
   /* Config meta info */
   #config-meta {
     display: none;
@@ -413,6 +530,17 @@
     <button id="btn-stop" disabled>&#9632; Stop</button>
   </div>
 
+  <div id="display-toggle">
+    <label class="toggle-label">
+      <input type="checkbox" id="chk-raw" checked>
+      <span>Show Reasoning + Answer</span>
+    </label>
+    <label class="toggle-label">
+      <input type="checkbox" id="chk-autoscroll">
+      <span>Auto-scroll</span>
+    </label>
+  </div>
+
   <div id="config-meta">
     Model: <span id="meta-model">—</span> &nbsp;|&nbsp; Temperature: <span id="meta-temp">—</span>
   </div>
@@ -423,7 +551,7 @@
       <button id="btn-view-editor" class="active" onclick="switchView('editor')">Editor</button>
       <button id="btn-view-structure" onclick="switchView('structure')">Outline</button>
     </div>
-    <textarea id="editor" placeholder="Select an assistant prompt to edit..." spellcheck="false"></textarea>
+    <div id="editor-wrapper"></div>
     <div id="prompt-structure"></div>
     <div id="save-status"></div>
   </div>
@@ -431,7 +559,42 @@
   <button id="btn-save" disabled>Save Prompt</button>
 </div>
 
+<div id="toast"></div>
+
 <script>
+function showToast(message, duration = 1800) {
+  const toast = document.getElementById("toast");
+  toast.textContent = message;
+  toast.classList.add("visible");
+  setTimeout(() => toast.classList.remove("visible"), duration);
+}
+
+// ── CodeMirror setup ─────────────────────────────────────────────────────
+
+let cmEditor = null;
+
+function initCodeMirror() {
+  cmEditor = CodeMirror(document.getElementById("editor-wrapper"), {
+    value: "",
+    mode: "markdown",
+    lineNumbers: true,
+    lineWrapping: true,
+    tabSize: 2,
+    styleActiveLine: true,
+    matchBrackets: true,
+  });
+}
+
+function getEditorContent() {
+  return cmEditor ? cmEditor.getValue() : "";
+}
+
+function setEditorContent(text) {
+  if (!cmEditor) return;
+  cmEditor.setValue(text);
+  cmEditor.refresh();
+}
+
 const STOP_LABELS = {
   assistant_succeeded: "Assistant succeeded",
   turns_ended: "Turn limit reached",
@@ -454,6 +617,7 @@ async function init() {
   document.getElementById("btn-play").addEventListener("click", startConversation);
   document.getElementById("btn-stop").addEventListener("click", stopConversation);
   document.getElementById("btn-save").addEventListener("click", savePrompt);
+  document.getElementById("chk-raw").addEventListener("change", refreshMessages);
 }
 
 // ── Load configs ──────────────────────────────────────────────────────────
@@ -491,13 +655,12 @@ async function loadScenarioConfigs() {
 async function onAssistantSelect() {
   const name = document.getElementById("select-assistant").value;
   currentAssistant = name;
-  const editor = document.getElementById("editor");
   const saveStatus = document.getElementById("save-status");
   const configMeta = document.getElementById("config-meta");
   saveStatus.textContent = "";
 
   if (!name) {
-    editor.value = "";
+    setEditorContent("");
     configMeta.style.display = "none";
     document.getElementById("btn-save").disabled = true;
     updatePlayButton();
@@ -506,7 +669,7 @@ async function onAssistantSelect() {
 
   const res = await fetch(`/api/configs/assistant/${name}/prompt`);
   const data = await res.json();
-  editor.value = data.system_prompt;
+  setEditorContent(data.system_prompt);
   document.getElementById("meta-model").textContent = data.model;
   document.getElementById("meta-temp").textContent = data.temperature;
   configMeta.style.display = "flex";
@@ -518,7 +681,7 @@ async function onAssistantSelect() {
 
 async function savePrompt() {
   if (!currentAssistant) return;
-  const systemPrompt = document.getElementById("editor").value;
+  const systemPrompt = getEditorContent();
   const saveStatus = document.getElementById("save-status");
 
   try {
@@ -535,6 +698,7 @@ async function savePrompt() {
     }
     saveStatus.textContent = `Saved successfully. Backup created.`;
     saveStatus.style.color = "#28a745";
+    showToast("\u2714  Prompt salvo!");
   } catch (e) {
     saveStatus.textContent = `Error: ${e.message}`;
     saveStatus.style.color = "#dc3545";
@@ -605,10 +769,64 @@ function startConversation() {
   };
 }
 
+function isRawMode() {
+  return document.getElementById("chk-raw").checked;
+}
+
+function parseXmlBlocks(raw) {
+  const reasoning = raw.match(/<reasoning[^>]*>\s*([\s\S]*?)\s*<\/reasoning>/);
+  const answer = raw.match(/<answer>\s*([\s\S]*?)\s*<\/answer>/);
+  if (!reasoning && !answer) return null;
+  return {
+    reasoning: reasoning ? reasoning[1].trim() : null,
+    answer: answer ? answer[1].trim() : raw,
+  };
+}
+
+function renderAssistantBubble(div, raw, speakerLabel) {
+  // Remove previous structured bubbles
+  div.querySelectorAll(".bubble-reasoning, .bubble-answer").forEach(el => el.remove());
+
+  const parsed = parseXmlBlocks(raw);
+  const showStructured = isRawMode() && parsed;
+
+  // Reset base content visibility
+  const contentEl = div.querySelector(".content");
+  const speakerEl = div.querySelector(".speaker");
+
+  if (showStructured) {
+    div.classList.add("structured");
+
+    if (parsed.reasoning) {
+      const reasoningBubble = document.createElement("div");
+      reasoningBubble.className = "bubble-reasoning";
+      reasoningBubble.innerHTML =
+        '<div class="bubble-label">Reasoning</div>' +
+        '<div class="bubble-text"></div>';
+      reasoningBubble.querySelector(".bubble-text").textContent = parsed.reasoning;
+      div.appendChild(reasoningBubble);
+    }
+
+    const answerBubble = document.createElement("div");
+    answerBubble.className = "bubble-answer";
+    answerBubble.innerHTML =
+      '<div class="bubble-label">Answer</div>' +
+      '<div class="bubble-text"></div>';
+    answerBubble.querySelector(".bubble-text").textContent = parsed.answer;
+    div.appendChild(answerBubble);
+  } else {
+    div.classList.remove("structured");
+    contentEl.textContent = parsed ? parsed.answer : raw;
+  }
+}
+
 function addMessage(role, content, speakerOverride) {
   const messagesEl = document.getElementById("messages");
   const div = document.createElement("div");
   div.className = `message ${role}`;
+  div.dataset.rawContent = content;
+  div.dataset.role = role;
+  div.dataset.speaker = speakerOverride || role;
 
   const speaker = document.createElement("div");
   speaker.className = "speaker";
@@ -616,12 +834,32 @@ function addMessage(role, content, speakerOverride) {
 
   const contentEl = document.createElement("div");
   contentEl.className = "content";
-  contentEl.textContent = content;
 
   div.appendChild(speaker);
   div.appendChild(contentEl);
   messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  if (role === "assistant") {
+    renderAssistantBubble(div, content, speakerOverride);
+  } else {
+    contentEl.textContent = content;
+  }
+
+  if (document.getElementById("chk-autoscroll").checked) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+}
+
+function refreshMessages() {
+  document.querySelectorAll(".message").forEach(div => {
+    const raw = div.dataset.rawContent;
+    const role = div.dataset.role;
+    if (!raw) return;
+
+    if (role === "assistant") {
+      renderAssistantBubble(div, raw, div.dataset.speaker);
+    }
+  });
 }
 
 function finishConversation(stopReason, totalTurns) {
@@ -733,20 +971,21 @@ let currentView = "editor";
 
 function switchView(view) {
   currentView = view;
-  const editor = document.getElementById("editor");
+  const editorWrapper = document.getElementById("editor-wrapper");
   const structure = document.getElementById("prompt-structure");
   const btnEditor = document.getElementById("btn-view-editor");
   const btnStructure = document.getElementById("btn-view-structure");
   const btnSave = document.getElementById("btn-save");
 
   if (view === "editor") {
-    editor.style.display = "";
+    editorWrapper.style.display = "";
     structure.style.display = "none";
     btnEditor.classList.add("active");
     btnStructure.classList.remove("active");
     btnSave.style.display = "";
+    if (cmEditor) setTimeout(() => cmEditor.refresh(), 1);
   } else {
-    editor.style.display = "none";
+    editorWrapper.style.display = "none";
     structure.style.display = "block";
     btnEditor.classList.remove("active");
     btnStructure.classList.add("active");
@@ -757,7 +996,7 @@ function switchView(view) {
 
 function renderStructure() {
   const container = document.getElementById("prompt-structure");
-  const promptText = document.getElementById("editor").value;
+  const promptText = getEditorContent();
   container.innerHTML = "";
 
   if (!promptText.trim()) {
@@ -893,6 +1132,7 @@ function renderStructure() {
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 
+initCodeMirror();
 init();
 </script>
 </body>

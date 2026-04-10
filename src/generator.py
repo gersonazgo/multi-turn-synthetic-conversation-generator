@@ -60,7 +60,7 @@ def _call_llm(model: str, temperature: float, messages: list[dict], max_retries:
                 raise LLMContentError("LLM returned None content (possible refusal or filter).")
             return content
         except _TRANSIENT_ERRORS as e:
-            wait = 30 * (attempt + 1)
+            wait = 15 * (attempt + 1)
             console.print(f"[yellow]Transient error ({type(e).__name__}). Attempt {attempt + 1}/{max_retries}. Waiting {wait}s...[/]")
             time.sleep(wait)
         except LLMContentError:
