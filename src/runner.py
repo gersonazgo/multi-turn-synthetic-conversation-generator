@@ -11,7 +11,7 @@ from rich.panel import Panel
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 from .exporter import save_batch, save_conversation
 from .generator import generate_conversation

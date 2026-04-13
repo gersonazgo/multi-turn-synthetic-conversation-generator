@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
-load_dotenv()
+load_dotenv(override=True)
 
 from .exporter import save_conversation
 from .generator import generate_conversation_stream
