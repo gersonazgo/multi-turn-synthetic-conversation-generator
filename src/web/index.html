@@ -4,11 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Conversation Playground</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/markdown/markdown.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/xml/xml.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/mode/overlay.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -229,6 +224,57 @@
     line-height: 1.45;
   }
 
+  /* Emergency tool-call bubble */
+  .bubble-tool-call {
+    background: #f8d7da;
+    border: 1px solid #dc3545;
+    border-radius: 8px;
+    padding: 8px 12px;
+    box-shadow: 0 1px 2px rgba(220, 53, 69, 0.2);
+    align-self: flex-end;
+    max-width: 65%;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .bubble-tool-call .tool-banner {
+    font-size: 13px;
+    font-weight: 600;
+    color: #721c24;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .bubble-tool-call .tool-reasoning {
+    font-size: 12px;
+    color: #5a1a1f;
+    background: rgba(255, 255, 255, 0.55);
+    border-radius: 4px;
+    padding: 6px 8px;
+    white-space: pre-wrap;
+    line-height: 1.45;
+    font-style: italic;
+  }
+  .bubble-tool-call .tool-reasoning-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #721c24;
+    margin-bottom: 3px;
+    font-style: normal;
+  }
+  .message.tool-call-marker {
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+    max-width: 65%;
+    align-self: flex-end;
+  }
+  .message.tool-call-marker::before { display: none; }
+  .message.tool-call-marker .speaker,
+  .message.tool-call-marker .content { display: none; }
+
   #result-bar {
     padding: 10px 16px;
     font-size: 13px;
@@ -315,18 +361,18 @@
     flex-direction: column;
     min-height: 0;
   }
-  #editor-wrapper {
+  #editor {
     flex: 1;
-    min-height: 200px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    overflow: hidden;
-  }
-  #editor-wrapper .CodeMirror {
-    height: 100%;
+    width: 100%;
     font-family: "SF Mono", "Fira Code", "Consolas", monospace;
     font-size: 12px;
     line-height: 1.5;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    resize: none;
+    min-height: 200px;
+    tab-size: 2;
   }
   #save-status {
     font-size: 11px;
@@ -435,6 +481,39 @@
   }
   .section-children.open {
     display: block;
+  }
+  .section-content {
+    display: none;
+    margin: 6px 0 6px 46px;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-left: 3px solid #1a73e8;
+    border-radius: 0 6px 6px 0;
+    font-size: 12px;
+    color: #444;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .section-content.open {
+    display: block;
+  }
+  .section-content[contenteditable="true"] {
+    background: #fff;
+    border: 1px solid #1a73e8;
+    border-left: 3px solid #1a73e8;
+    outline: none;
+    cursor: text;
+  }
+  .section-content .edit-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 10px;
+    color: #999;
+    font-style: italic;
+  }
+  .section-header.active-leaf .section-label {
+    color: #1a73e8;
   }
 
   /* Display toggle */
@@ -551,7 +630,7 @@
       <button id="btn-view-editor" class="active" onclick="switchView('editor')">Editor</button>
       <button id="btn-view-structure" onclick="switchView('structure')">Outline</button>
     </div>
-    <div id="editor-wrapper"></div>
+    <textarea id="editor" placeholder="Select an assistant prompt to edit..." spellcheck="false"></textarea>
     <div id="prompt-structure"></div>
     <div id="save-status"></div>
   </div>
@@ -569,30 +648,12 @@ function showToast(message, duration = 1800) {
   setTimeout(() => toast.classList.remove("visible"), duration);
 }
 
-// ── CodeMirror setup ─────────────────────────────────────────────────────
-
-let cmEditor = null;
-
-function initCodeMirror() {
-  cmEditor = CodeMirror(document.getElementById("editor-wrapper"), {
-    value: "",
-    mode: "markdown",
-    lineNumbers: true,
-    lineWrapping: true,
-    tabSize: 2,
-    styleActiveLine: true,
-    matchBrackets: true,
-  });
-}
-
 function getEditorContent() {
-  return cmEditor ? cmEditor.getValue() : "";
+  return document.getElementById("editor").value;
 }
 
 function setEditorContent(text) {
-  if (!cmEditor) return;
-  cmEditor.setValue(text);
-  cmEditor.refresh();
+  document.getElementById("editor").value = text;
 }
 
 const STOP_LABELS = {
@@ -751,6 +812,11 @@ function startConversation() {
     addMessage(data.role, data.content, data.role === "user" ? currentPersona : "Assistant");
   });
 
+  eventSource.addEventListener("tool_call", (e) => {
+    const data = JSON.parse(e.data);
+    addToolCallBubble(data.name, data.arguments);
+  });
+
   eventSource.addEventListener("error_event", (e) => {
     const data = JSON.parse(e.data);
     const statusBar = document.getElementById("status-bar");
@@ -820,6 +886,46 @@ function renderAssistantBubble(div, raw, speakerLabel) {
   }
 }
 
+function renderToolCallBubble(bubble, args) {
+  bubble.innerHTML = "";
+  const banner = document.createElement("div");
+  banner.className = "tool-banner";
+  banner.textContent = "☎️ Contato de emergência acionado";
+  bubble.appendChild(banner);
+
+  if (isRawMode() && args && args.reasoning) {
+    const reasoning = document.createElement("div");
+    reasoning.className = "tool-reasoning";
+    const label = document.createElement("div");
+    label.className = "tool-reasoning-label";
+    label.textContent = "Reasoning";
+    reasoning.appendChild(label);
+    const text = document.createElement("div");
+    text.textContent = args.reasoning;
+    reasoning.appendChild(text);
+    bubble.appendChild(reasoning);
+  }
+}
+
+function addToolCallBubble(name, args) {
+  if (name !== "call_emergency_contact") return;
+  const messagesEl = document.getElementById("messages");
+  const div = document.createElement("div");
+  div.className = "message tool-call-marker";
+  div.dataset.toolCall = JSON.stringify({ name, arguments: args });
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble-tool-call";
+  renderToolCallBubble(bubble, args);
+  div.appendChild(bubble);
+
+  messagesEl.appendChild(div);
+
+  if (document.getElementById("chk-autoscroll").checked) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+}
+
 function addMessage(role, content, speakerOverride) {
   const messagesEl = document.getElementById("messages");
   const div = document.createElement("div");
@@ -852,6 +958,12 @@ function addMessage(role, content, speakerOverride) {
 
 function refreshMessages() {
   document.querySelectorAll(".message").forEach(div => {
+    if (div.dataset.toolCall) {
+      const parsed = JSON.parse(div.dataset.toolCall);
+      const bubble = div.querySelector(".bubble-tool-call");
+      if (bubble) renderToolCallBubble(bubble, parsed.arguments);
+      return;
+    }
     const raw = div.dataset.rawContent;
     const role = div.dataset.role;
     if (!raw) return;
@@ -943,6 +1055,9 @@ async function loadConversation(id, element) {
   conv.messages.forEach(msg => {
     const role = msg.role === "nami" ? "assistant" : (msg.role === "patient" ? "user" : msg.role);
     addMessage(role, msg.content, role === "assistant" ? "Assistant" : conv.persona);
+    if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
+      msg.tool_calls.forEach(tc => addToolCallBubble(tc.name, tc.arguments));
+    }
   });
 
   const stopReason = conv.conversation_stop_reason === "nami_succeeded" ? "assistant_succeeded" : conv.conversation_stop_reason;
@@ -971,21 +1086,20 @@ let currentView = "editor";
 
 function switchView(view) {
   currentView = view;
-  const editorWrapper = document.getElementById("editor-wrapper");
+  const editor = document.getElementById("editor");
   const structure = document.getElementById("prompt-structure");
   const btnEditor = document.getElementById("btn-view-editor");
   const btnStructure = document.getElementById("btn-view-structure");
   const btnSave = document.getElementById("btn-save");
 
   if (view === "editor") {
-    editorWrapper.style.display = "";
+    editor.style.display = "";
     structure.style.display = "none";
     btnEditor.classList.add("active");
     btnStructure.classList.remove("active");
     btnSave.style.display = "";
-    if (cmEditor) setTimeout(() => cmEditor.refresh(), 1);
   } else {
-    editorWrapper.style.display = "none";
+    editor.style.display = "none";
     structure.style.display = "block";
     btnEditor.classList.remove("active");
     btnStructure.classList.add("active");
@@ -1005,28 +1119,39 @@ function renderStructure() {
   }
   const lines = promptText.split("\n");
   // Build 3-level tree: # → ## → ###
+  // Each node stores contentStartLine / contentEndLine (indices into `lines` array)
   const tree = []; // level-1 items
+  let currentNode = null; // track last header node for content accumulation
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const trimmed = line.trim();
     // Order matters: check ### before ## before #
     const h3 = trimmed.match(/^###\s+(.+)/);
     const h2 = !h3 && trimmed.match(/^##\s+(.+)/);
     const h1 = !h3 && !h2 && trimmed.match(/^#\s+(.+)/);
 
+    // Close previous node's content range
+    if (h1 || h2 || h3) {
+      if (currentNode) currentNode.contentEndLine = i;
+    }
+
     if (h1) {
-      tree.push({ level: 1, label: h1[1].replace(/\s*#\s*$/, "").trim(), children: [] });
+      const node = { level: 1, label: h1[1].replace(/\s*#\s*$/, "").trim(), children: [], content: [], contentStartLine: i + 1, contentEndLine: -1 };
+      tree.push(node);
+      currentNode = node;
     } else if (h2) {
       const label = h2[1].replace(/\s*##\s*$/, "").trim();
+      const node = { level: 2, label, children: [], content: [], contentStartLine: i + 1, contentEndLine: -1 };
       if (tree.length > 0) {
-        tree[tree.length - 1].children.push({ level: 2, label, children: [] });
+        tree[tree.length - 1].children.push(node);
       } else {
-        // h2 without a parent h1 — promote to top level
-        tree.push({ level: 2, label, children: [] });
+        tree.push(node);
       }
+      currentNode = node;
     } else if (h3) {
       const label = h3[1].replace(/\s*###\s*$/, "").trim();
-      // Find nearest h2 parent, or nearest h1
+      const node = { level: 3, label, content: [], contentStartLine: i + 1, contentEndLine: -1 };
       let parent = null;
       if (tree.length > 0) {
         const lastTop = tree[tree.length - 1];
@@ -1038,10 +1163,25 @@ function renderStructure() {
       }
       if (parent) {
         if (!parent.children) parent.children = [];
-        parent.children.push({ level: 3, label });
+        parent.children.push(node);
       }
+      currentNode = node;
+    } else if (currentNode) {
+      currentNode.content.push(line);
     }
   }
+  // Close last node
+  if (currentNode) currentNode.contentEndLine = lines.length;
+
+  // Trim trailing empty lines from content (and adjust line indices)
+  function trimContent(nodes) {
+    for (const n of nodes) {
+      while (n.content && n.content.length > 0 && n.content[n.content.length - 1].trim() === "") { n.content.pop(); n.contentEndLine--; }
+      while (n.content && n.content.length > 0 && n.content[0].trim() === "") { n.content.shift(); n.contentStartLine++; }
+      if (n.children) trimContent(n.children);
+    }
+  }
+  trimContent(tree);
 
   if (tree.length === 0) {
     container.innerHTML = '<div style="padding:10px;color:#888;">Nenhum header markdown encontrado.</div>';
@@ -1057,8 +1197,9 @@ function renderStructure() {
     const header = document.createElement("div");
     header.className = "section-header";
 
+    const isLeafWithContent = !hasChildren && node.content && node.content.length > 0;
     const arrow = document.createElement("span");
-    arrow.className = "section-arrow" + (hasChildren ? "" : " leaf");
+    arrow.className = "section-arrow" + (hasChildren || isLeafWithContent ? "" : " leaf");
     arrow.textContent = "\u25B6";
 
     const label = document.createElement("span");
@@ -1085,6 +1226,52 @@ function renderStructure() {
       header.addEventListener("click", () => {
         const isOpen = childrenContainer.classList.toggle("open");
         arrow.classList.toggle("expanded", isOpen);
+      });
+    } else if (node.content && node.content.length > 0) {
+      // Leaf node with content — show/hide on click, edit on double-click
+      const contentDiv = document.createElement("div");
+      contentDiv.className = "section-content";
+      contentDiv.textContent = node.content.join("\n");
+      item.appendChild(contentDiv);
+
+      header.style.cursor = "pointer";
+      header.addEventListener("click", () => {
+        const isOpen = contentDiv.classList.toggle("open");
+        header.classList.toggle("active-leaf", isOpen);
+        arrow.classList.toggle("expanded", isOpen);
+      });
+
+      contentDiv.addEventListener("dblclick", () => {
+        if (contentDiv.contentEditable === "true") return;
+        contentDiv.contentEditable = "true";
+        contentDiv.focus();
+        // Select all text for easy replacement
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(contentDiv);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      });
+
+      contentDiv.addEventListener("blur", () => {
+        if (contentDiv.contentEditable !== "true") return;
+        contentDiv.contentEditable = "false";
+        const newText = contentDiv.innerText;
+        // Rebuild prompt: replace lines between contentStartLine and contentEndLine
+        const currentLines = getEditorContent().split("\n");
+        const before = currentLines.slice(0, node.contentStartLine);
+        const after = currentLines.slice(node.contentEndLine);
+        const updated = [...before, newText, ...after].join("\n");
+        setEditorContent(updated);
+        document.getElementById("btn-save").disabled = false;
+        document.getElementById("btn-save").style.display = "";
+      });
+
+      contentDiv.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          contentDiv.contentEditable = "false";
+          contentDiv.textContent = node.content.join("\n"); // revert
+        }
       });
     }
 
@@ -1132,7 +1319,6 @@ function renderStructure() {
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 
-initCodeMirror();
 init();
 </script>
 </body>

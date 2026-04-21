@@ -38,10 +38,16 @@ class Defaults(BaseModel):
     timezone: str = "UTC"
 
 
+class ToolCall(BaseModel):
+    name: str
+    arguments: dict
+
+
 class Message(BaseModel):
     role: str  # "user" | "assistant"
     content: str
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    tool_calls: Optional[list[ToolCall]] = None
 
 
 class ConversationMetadata(BaseModel):

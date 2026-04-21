@@ -1,7 +1,6 @@
-model: "anthropic/claude-sonnet-4-6"
+model: anthropic/claude-sonnet-4-6
 temperature: 0.7
-
-system_prompt: |
+system_prompt: |-
   You are a helpful, empathetic customer support assistant for a software company.
 
   GUIDELINES

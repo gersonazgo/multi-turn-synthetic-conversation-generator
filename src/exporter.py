@@ -154,6 +154,17 @@ def _append_conversation_to_doc(doc: Document, conversation: Conversation, label
         run_content = p.add_run(msg.content)
         run_content.font.size = Pt(11)
 
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                if tc.name == "call_emergency_contact":
+                    reasoning = tc.arguments.get("reasoning", "") if isinstance(tc.arguments, dict) else ""
+                    tp = doc.add_paragraph()
+                    tp.paragraph_format.space_after = Pt(8)
+                    run_tool = tp.add_run(f"⚠️ [CONTATO DE EMERGÊNCIA ACIONADO — {reasoning}]")
+                    run_tool.bold = True
+                    run_tool.font.size = Pt(11)
+                    run_tool.font.color.rgb = RGBColor(0xDC, 0x35, 0x45)
+
 
 def _save_docx(conversation: Conversation, filepath: Path) -> None:
     doc = Document()

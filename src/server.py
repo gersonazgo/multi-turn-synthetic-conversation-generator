@@ -147,6 +147,11 @@ async def save_assistant_prompt(name: str, request: Request):
     if not path.exists():
         raise HTTPException(404, f"Config not found: {name}")
 
+    # Strip trailing whitespace per line so PyYAML can use block scalar "|"
+    # (literal block style drops trailing spaces, so any trailing whitespace
+    # forces a fallback to double-quoted with \n escapes).
+    system_prompt = "\n".join(line.rstrip() for line in system_prompt.splitlines())
+
     # Load existing config to preserve model/temperature
     data = _load_yaml(path)
     data["system_prompt"] = system_prompt
@@ -177,7 +182,7 @@ async def save_assistant_prompt(name: str, request: Request):
     _BlockDumper.add_representer(str, _str_representer)
 
     path.write_text(
-        yaml.dump(data, Dumper=_BlockDumper, allow_unicode=True, default_flow_style=False, sort_keys=False),
+        yaml.dump(data, Dumper=_BlockDumper, allow_unicode=True, default_flow_style=False, sort_keys=False, width=float("inf")),
         encoding="utf-8",
     )
     return {"status": "saved", "name": name}

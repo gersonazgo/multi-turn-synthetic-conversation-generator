@@ -1,4 +1,4 @@
-max_turns: 20
+max_turns: 25
 delay: 0
 output_dir: "datasets"
 stop_phrase: "Obg, Nami"
