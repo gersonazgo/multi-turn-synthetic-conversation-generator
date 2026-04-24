@@ -57,3 +57,16 @@ Está sugerindo sempre o gelo. O que fazer?
 - Uma outra ideia é a gente ter um template de WhatsApp onde o usuário pode selecionar qual a técnica que ele quer dentro da intensidade da emoção adequada
 
 Paramos na parte de risco à vida. É preciso mapear melhor o que é risco à vida e o que é postura colaborativa ou não 
+
+21/04/26
+Prompt do GR05 - Bruno. Nami sugerindo "Uma opção é ligar pra uma farmácia e perguntar ao farmacêutico sobre a combinação, eles podem te ajudar com isso."
+Prompt da GR08 - Letícia. Nami deveria ter acionado o contato de emergência após o paciente sugerir tantas doses / combinações arriscadas de medicamentos. Deveria ter entendido que isso é um plano.
+Pedir para a Nami evitar travessões 
+
+24/04/26
+O que não fazer com "contato de emergência" não é um título adequado. Rever isso
+Revisar os números das seçoes sendo referenciados
+Algo sobre como a Nami inferiu a necessidade de encerrar a conversa, mesmo o paciente não tendo dado uma deixa para isso
+Eu vou melhorar a recusa. O modelo é muito benevolente em interpretar que "não sei" não é uma recusa, por exemplo
+Resolver a diferença entre ideação suicida e pensamento/intenção auto-lesiva (dar exemplos)
+Talvez a Nami não deva usar emojis porque se atrapalha replicando emojis utilizados pelo paciente

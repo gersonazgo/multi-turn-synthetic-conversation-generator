@@ -83,7 +83,7 @@ def _mock_emergency_contact(args: dict) -> str:
 
 
 def _is_user_satisfied(content: str, stop_phrase: str) -> bool:
-    return stop_phrase in content.lower()
+    return stop_phrase.lower() in content.lower()
 
 
 def _call_llm(model: str, temperature: float, messages: list[dict], max_retries: int = 3, tools: list[dict] | None = None):

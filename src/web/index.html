@@ -231,8 +231,6 @@
     border-radius: 8px;
     padding: 8px 12px;
     box-shadow: 0 1px 2px rgba(220, 53, 69, 0.2);
-    align-self: flex-end;
-    max-width: 65%;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -433,9 +431,82 @@
     padding: 5px 10px;
     gap: 6px;
     transition: background 0.1s;
+    position: relative;
   }
   .section-header:hover {
     background: #e8f0fe;
+  }
+  .section-drag {
+    color: #bbb;
+    font-size: 12px;
+    cursor: grab;
+    user-select: none;
+    flex-shrink: 0;
+    width: 10px;
+    text-align: center;
+    visibility: hidden;
+  }
+  .section-header:hover .section-drag {
+    visibility: visible;
+  }
+  .section-header.dragging .section-drag,
+  .section-item.dragging > .section-header .section-drag {
+    cursor: grabbing;
+  }
+  .section-item.dragging {
+    opacity: 0.45;
+  }
+  .section-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 2px;
+    visibility: hidden;
+  }
+  .section-header:hover .section-actions {
+    visibility: visible;
+  }
+  .section-action {
+    background: none;
+    border: none;
+    padding: 2px 6px;
+    font-size: 12px;
+    cursor: pointer;
+    color: #666;
+    border-radius: 3px;
+    line-height: 1;
+  }
+  .section-action:hover {
+    background: #d1e3fd;
+    color: #1a73e8;
+  }
+  .section-action.danger:hover {
+    background: #fde1e1;
+    color: #dc3545;
+  }
+  .section-label[contenteditable="true"] {
+    background: #fff;
+    border: 1px solid #1a73e8;
+    padding: 1px 4px;
+    border-radius: 3px;
+    outline: none;
+    cursor: text;
+  }
+  .section-header.drop-before::before,
+  .section-header.drop-after::after {
+    content: "";
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    height: 2px;
+    background: #1a73e8;
+    border-radius: 1px;
+    pointer-events: none;
+  }
+  .section-header.drop-before::before {
+    top: -1px;
+  }
+  .section-header.drop-after::after {
+    bottom: -1px;
   }
   .section-arrow {
     font-size: 10px;
@@ -1108,6 +1179,62 @@ function switchView(view) {
   }
 }
 
+// ── Outline state (set by renderStructure, mutated by DnD/rename/delete) ──
+let outlineTree = [];
+let outlinePreamble = [];
+let dragSourcePath = null;
+
+function getNodeByPath(tree, path) {
+  let node = null;
+  let nodes = tree;
+  for (const idx of path) {
+    node = nodes[idx];
+    if (!node) return null;
+    nodes = node.children || [];
+  }
+  return node;
+}
+
+function getSiblingsForPath(tree, path) {
+  if (path.length === 1) return tree;
+  const parent = getNodeByPath(tree, path.slice(0, -1));
+  return parent ? parent.children : null;
+}
+
+function pathsShareParent(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length - 1; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function pathsEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function serializeOutline(tree, preamble) {
+  const out = [...preamble];
+  function emit(nodes) {
+    for (const n of nodes) {
+      if (out.length > 0 && out[out.length - 1] !== "") out.push("");
+      out.push("#".repeat(n.level) + " " + n.label);
+      if (n.content && n.content.length > 0) out.push(...n.content);
+      if (n.children && n.children.length > 0) emit(n.children);
+    }
+  }
+  emit(tree);
+  return out.join("\n");
+}
+
+function commitOutline() {
+  setEditorContent(serializeOutline(outlineTree, outlinePreamble));
+  const btnSave = document.getElementById("btn-save");
+  btnSave.disabled = false;
+  btnSave.style.display = "";
+  renderStructure();
+}
+
 function renderStructure() {
   const container = document.getElementById("prompt-structure");
   const promptText = getEditorContent();
@@ -1118,48 +1245,43 @@ function renderStructure() {
     return;
   }
   const lines = promptText.split("\n");
-  // Build 3-level tree: # → ## → ###
-  // Each node stores contentStartLine / contentEndLine (indices into `lines` array)
-  const tree = []; // level-1 items
-  let currentNode = null; // track last header node for content accumulation
+  const tree = [];
+  const preamble = [];
+  let currentNode = null;
+  let seenHeader = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
-    // Order matters: check ### before ## before #
     const h3 = trimmed.match(/^###\s+(.+)/);
     const h2 = !h3 && trimmed.match(/^##\s+(.+)/);
     const h1 = !h3 && !h2 && trimmed.match(/^#\s+(.+)/);
 
-    // Close previous node's content range
-    if (h1 || h2 || h3) {
-      if (currentNode) currentNode.contentEndLine = i;
+    if (!seenHeader && !h1 && !h2 && !h3) {
+      preamble.push(line);
+      continue;
     }
 
     if (h1) {
-      const node = { level: 1, label: h1[1].replace(/\s*#\s*$/, "").trim(), children: [], content: [], contentStartLine: i + 1, contentEndLine: -1 };
+      seenHeader = true;
+      const node = { level: 1, label: h1[1].replace(/\s*#\s*$/, "").trim(), children: [], content: [] };
       tree.push(node);
       currentNode = node;
     } else if (h2) {
+      seenHeader = true;
       const label = h2[1].replace(/\s*##\s*$/, "").trim();
-      const node = { level: 2, label, children: [], content: [], contentStartLine: i + 1, contentEndLine: -1 };
-      if (tree.length > 0) {
-        tree[tree.length - 1].children.push(node);
-      } else {
-        tree.push(node);
-      }
+      const node = { level: 2, label, children: [], content: [] };
+      if (tree.length > 0) tree[tree.length - 1].children.push(node);
+      else tree.push(node);
       currentNode = node;
     } else if (h3) {
+      seenHeader = true;
       const label = h3[1].replace(/\s*###\s*$/, "").trim();
-      const node = { level: 3, label, content: [], contentStartLine: i + 1, contentEndLine: -1 };
+      const node = { level: 3, label, children: [], content: [] };
       let parent = null;
       if (tree.length > 0) {
         const lastTop = tree[tree.length - 1];
-        if (lastTop.children.length > 0) {
-          parent = lastTop.children[lastTop.children.length - 1];
-        } else {
-          parent = lastTop;
-        }
+        parent = lastTop.children.length > 0 ? lastTop.children[lastTop.children.length - 1] : lastTop;
       }
       if (parent) {
         if (!parent.children) parent.children = [];
@@ -1170,45 +1292,173 @@ function renderStructure() {
       currentNode.content.push(line);
     }
   }
-  // Close last node
-  if (currentNode) currentNode.contentEndLine = lines.length;
 
-  // Trim trailing empty lines from content (and adjust line indices)
   function trimContent(nodes) {
     for (const n of nodes) {
-      while (n.content && n.content.length > 0 && n.content[n.content.length - 1].trim() === "") { n.content.pop(); n.contentEndLine--; }
-      while (n.content && n.content.length > 0 && n.content[0].trim() === "") { n.content.shift(); n.contentStartLine++; }
+      while (n.content.length > 0 && n.content[n.content.length - 1].trim() === "") n.content.pop();
+      while (n.content.length > 0 && n.content[0].trim() === "") n.content.shift();
       if (n.children) trimContent(n.children);
     }
   }
   trimContent(tree);
+  while (preamble.length > 0 && preamble[preamble.length - 1].trim() === "") preamble.pop();
+
+  outlineTree = tree;
+  outlinePreamble = preamble;
 
   if (tree.length === 0) {
     container.innerHTML = '<div style="padding:10px;color:#888;">Nenhum header markdown encontrado.</div>';
     return;
   }
 
-  function buildNode(node, levelClass) {
+  function startRename(node, labelEl, itemEl) {
+    if (labelEl.contentEditable === "true") return;
+    itemEl.draggable = false;
+    labelEl.contentEditable = "true";
+    labelEl.focus();
+    const range = document.createRange();
+    range.selectNodeContents(labelEl);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    let cancelled = false;
+    const finish = () => {
+      if (labelEl.contentEditable !== "true") return;
+      labelEl.contentEditable = "false";
+      itemEl.draggable = true;
+      if (cancelled) { labelEl.textContent = node.label; return; }
+      const newLabel = labelEl.textContent.replace(/\s+/g, " ").trim();
+      if (!newLabel || newLabel === node.label) { labelEl.textContent = node.label; return; }
+      node.label = newLabel;
+      commitOutline();
+    };
+
+    labelEl.addEventListener("blur", finish, { once: true });
+    labelEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); labelEl.blur(); }
+      else if (e.key === "Escape") { e.preventDefault(); cancelled = true; labelEl.blur(); }
+    });
+  }
+
+  function deleteNode(path) {
+    const node = getNodeByPath(outlineTree, path);
+    if (!node) return;
+    if (!confirm("Excluir \"" + node.label + "\" e todo o conteúdo dessa seção?")) return;
+    const siblings = getSiblingsForPath(outlineTree, path);
+    siblings.splice(path[path.length - 1], 1);
+    commitOutline();
+  }
+
+  function clearDropIndicators() {
+    container.querySelectorAll(".drop-before, .drop-after").forEach(el => {
+      el.classList.remove("drop-before", "drop-after");
+    });
+  }
+
+  function buildNode(node, levelClass, path) {
     const item = document.createElement("div");
     item.className = "section-item " + levelClass;
+    item.dataset.path = JSON.stringify(path);
+    item.draggable = true;
 
     const hasChildren = node.children && node.children.length > 0;
 
     const header = document.createElement("div");
     header.className = "section-header";
 
+    const dragHandle = document.createElement("span");
+    dragHandle.className = "section-drag";
+    dragHandle.textContent = "⋮⋮";
+    dragHandle.title = "Arraste para reordenar";
+
     const isLeafWithContent = !hasChildren && node.content && node.content.length > 0;
     const arrow = document.createElement("span");
     arrow.className = "section-arrow" + (hasChildren || isLeafWithContent ? "" : " leaf");
-    arrow.textContent = "\u25B6";
+    arrow.textContent = "▶";
 
     const label = document.createElement("span");
     label.className = "section-label";
     label.textContent = node.label;
 
+    const actions = document.createElement("span");
+    actions.className = "section-actions";
+
+    const renameBtn = document.createElement("button");
+    renameBtn.className = "section-action";
+    renameBtn.type = "button";
+    renameBtn.textContent = "✎";
+    renameBtn.title = "Renomear";
+    renameBtn.addEventListener("click", (e) => { e.stopPropagation(); startRename(node, label, item); });
+    renameBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "section-action danger";
+    deleteBtn.type = "button";
+    deleteBtn.textContent = "✕";
+    deleteBtn.title = "Excluir";
+    deleteBtn.addEventListener("click", (e) => { e.stopPropagation(); deleteNode(path); });
+    deleteBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+
+    actions.appendChild(renameBtn);
+    actions.appendChild(deleteBtn);
+
+    header.appendChild(dragHandle);
     header.appendChild(arrow);
     header.appendChild(label);
+    header.appendChild(actions);
     item.appendChild(header);
+
+    item.addEventListener("dragstart", (e) => {
+      if (label.contentEditable === "true") { e.preventDefault(); return; }
+      e.stopPropagation();
+      dragSourcePath = path;
+      item.classList.add("dragging");
+      try {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", JSON.stringify(path));
+      } catch (_) {}
+    });
+    item.addEventListener("dragend", (e) => {
+      e.stopPropagation();
+      item.classList.remove("dragging");
+      clearDropIndicators();
+      dragSourcePath = null;
+    });
+    item.addEventListener("dragover", (e) => {
+      if (!dragSourcePath) return;
+      if (!pathsShareParent(dragSourcePath, path)) return;
+      if (pathsEqual(dragSourcePath, path)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      const rect = header.getBoundingClientRect();
+      const before = e.clientY < rect.top + rect.height / 2;
+      clearDropIndicators();
+      header.classList.add(before ? "drop-before" : "drop-after");
+    });
+    item.addEventListener("dragleave", (e) => {
+      if (!item.contains(e.relatedTarget)) header.classList.remove("drop-before", "drop-after");
+    });
+    item.addEventListener("drop", (e) => {
+      if (!dragSourcePath) return;
+      if (!pathsShareParent(dragSourcePath, path)) return;
+      if (pathsEqual(dragSourcePath, path)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = header.getBoundingClientRect();
+      const insertAfter = e.clientY >= rect.top + rect.height / 2;
+      const siblings = getSiblingsForPath(outlineTree, path);
+      const sourceIdx = dragSourcePath[dragSourcePath.length - 1];
+      const targetIdx = path[path.length - 1];
+      const [moved] = siblings.splice(sourceIdx, 1);
+      let newIdx = targetIdx;
+      if (sourceIdx < targetIdx) newIdx -= 1;
+      if (insertAfter) newIdx += 1;
+      siblings.splice(newIdx, 0, moved);
+      clearDropIndicators();
+      commitOutline();
+    });
 
     if (hasChildren) {
       const childrenContainer = document.createElement("div");
@@ -1217,25 +1467,28 @@ function renderStructure() {
       const childLevelMap = { "section-level-1": "section-level-2", "section-level-2": "section-level-3" };
       const childLevel = childLevelMap[levelClass] || "section-level-3";
 
-      node.children.forEach(child => {
-        childrenContainer.appendChild(buildNode(child, childLevel));
+      node.children.forEach((child, i) => {
+        childrenContainer.appendChild(buildNode(child, childLevel, [...path, i]));
       });
 
       item.appendChild(childrenContainer);
 
-      header.addEventListener("click", () => {
+      header.addEventListener("click", (e) => {
+        if (e.target.closest(".section-action")) return;
+        if (label.contentEditable === "true") return;
         const isOpen = childrenContainer.classList.toggle("open");
         arrow.classList.toggle("expanded", isOpen);
       });
     } else if (node.content && node.content.length > 0) {
-      // Leaf node with content — show/hide on click, edit on double-click
       const contentDiv = document.createElement("div");
       contentDiv.className = "section-content";
       contentDiv.textContent = node.content.join("\n");
       item.appendChild(contentDiv);
 
       header.style.cursor = "pointer";
-      header.addEventListener("click", () => {
+      header.addEventListener("click", (e) => {
+        if (e.target.closest(".section-action")) return;
+        if (label.contentEditable === "true") return;
         const isOpen = contentDiv.classList.toggle("open");
         header.classList.toggle("active-leaf", isOpen);
         arrow.classList.toggle("expanded", isOpen);
@@ -1244,8 +1497,8 @@ function renderStructure() {
       contentDiv.addEventListener("dblclick", () => {
         if (contentDiv.contentEditable === "true") return;
         contentDiv.contentEditable = "true";
+        item.draggable = false;
         contentDiv.focus();
-        // Select all text for easy replacement
         const sel = window.getSelection();
         const range = document.createRange();
         range.selectNodeContents(contentDiv);
@@ -1256,21 +1509,16 @@ function renderStructure() {
       contentDiv.addEventListener("blur", () => {
         if (contentDiv.contentEditable !== "true") return;
         contentDiv.contentEditable = "false";
-        const newText = contentDiv.innerText;
-        // Rebuild prompt: replace lines between contentStartLine and contentEndLine
-        const currentLines = getEditorContent().split("\n");
-        const before = currentLines.slice(0, node.contentStartLine);
-        const after = currentLines.slice(node.contentEndLine);
-        const updated = [...before, newText, ...after].join("\n");
-        setEditorContent(updated);
-        document.getElementById("btn-save").disabled = false;
-        document.getElementById("btn-save").style.display = "";
+        item.draggable = true;
+        node.content = contentDiv.innerText.split("\n");
+        commitOutline();
       });
 
       contentDiv.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
           contentDiv.contentEditable = "false";
-          contentDiv.textContent = node.content.join("\n"); // revert
+          item.draggable = true;
+          contentDiv.textContent = node.content.join("\n");
         }
       });
     }
@@ -1278,9 +1526,9 @@ function renderStructure() {
     return item;
   }
 
-  tree.forEach(section => {
+  tree.forEach((section, i) => {
     const levelClass = section.level === 1 ? "section-level-1" : "section-level-2";
-    container.appendChild(buildNode(section, levelClass));
+    container.appendChild(buildNode(section, levelClass, [i]));
   });
 }
 
